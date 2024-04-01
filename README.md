@@ -29,6 +29,8 @@ The stack has a fixed size that is determined at the start of the program and ca
 
 Popping form and pushing onto the stack are fast operations since there's no allocation involved. The stack pointer is incremented or decremented to keep track of the top of the stack.
 
+The stack grows top-to-bottom. Popping form the stack increments the stack pointer while pushing onto the stack decrements the stack pointer.
+
 ### Heap
 
 HiVM implements a heap memory by acting as an interface between the program and the host memory. Becuse of this, the heap may not be contiguous and doesn't have a fixed size. Memory blocks can be allocated and deallocated through interrupts, which is one of the high-level features of HiVM.
@@ -37,11 +39,15 @@ HiVM implements a heap memory by acting as an interface between the program and 
 
 A specific register that stores the next instruction in the program. The program counter is altered whenever a jump is performed.
 
+Registers should not be accessed by the program.
+
 ### Stack pointer
 
-A specific register that stores the address of the top of the stack. This register may be altered to efficiently push onto or pop from the stack.
+A specific register that stores the address of the top of the stack (topmost byte). This register may be altered to efficiently push onto or pop from the stack.
 
 Because HiVM doesn't virtualize pointers, the stack pointer points to the TOS relative to the host memory.
+
+Registers should not be accessed by the program.
 
 ### Program space
 
