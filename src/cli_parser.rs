@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::Parser;
 
 
@@ -6,16 +8,16 @@ use clap::Parser;
 pub struct CliParser {
 
     /// The input bytecode file to execute.
-    #[clap(value_parser, required = true)]
-    input_file: String,
+    #[clap(required = true)]
+    pub input_file: PathBuf,
 
     /// Set the stack size in bytes.
     #[clap(default_value="1000000")]
-    stack_size: usize,
+    pub stack_size: usize,
 
     /// Execute in verbose mode.
     #[clap(short='v', long)]
-    verbose: bool,
+    pub verbose: bool,
 
 }
 

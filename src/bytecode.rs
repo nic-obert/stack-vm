@@ -3,8 +3,11 @@
 #[repr(u8)]
 pub enum ByteCodes {
 
-    /// Load a static value from the program's static data section given its TOS virtual address.
-    LoadStatic,
+    LoadStatic1,
+    LoadStatic2,
+    LoadStatic4,
+    LoadStatic8,
+    LoadStaticBytes,
 
     LoadConst1,
     LoadConst2,
@@ -18,7 +21,18 @@ pub enum ByteCodes {
     Load8,
     LoadBytes,
     
+    VirtualConstToReal,
     VirtualToReal,
+
+    Store1,
+    Store2,
+    Store4,
+    Store8,
+    StoreBytes,
+
+    Malloc,
+    Realloc,
+    Free,
 
     /// No operation. Do nothing for this cycle.
     Nop

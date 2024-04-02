@@ -3,6 +3,8 @@ use static_assertions::const_assert_eq;
 use crate::bytecode::ByteCodes;
 
 use std::mem::{self, MaybeUninit};
+use std::alloc;
+use std::ptr;
 
 pub type Address = usize;
 
@@ -130,7 +132,7 @@ impl Stack {
 
     pub fn pop_bytes(&mut self, count: usize) -> &[u8] {
         unsafe {
-            let bytes = std::slice::from_raw_parts(self.tos, count);
+            let bytes = std::slice::from_raw_parts::<u8>(self.tos, count);
             self.tos = self.tos.byte_add(count);
             bytes
         }
@@ -210,6 +212,41 @@ impl<'a> Program<'a> {
     }
 
 
+    pub fn get_static1(&self, address: VirtualAddress) -> u8 {
+        self.code[address.0]
+    }
+
+
+    pub fn get_static2(&self, address: VirtualAddress) -> u16 {
+        unsafe {
+            *(self.code[address.0..].as_ptr() as *const u16)
+        }
+    }
+
+
+    pub fn get_static4(&self, address: VirtualAddress) -> u32 {
+        unsafe {
+            *(self.code[address.0..].as_ptr() as *const u32)
+        }
+    }
+
+
+    pub fn get_static8(&self, address: VirtualAddress) -> u64 {
+        unsafe {
+            *(self.code[address.0..].as_ptr() as *const u64)
+        }
+    }
+
+
+    pub fn get_static_bytes(&self, address: VirtualAddress, size: usize) -> &[u8] {
+        &self.code[address.0..address.0 + size]
+    }
+
+
+    pub fn virtual_to_real(&self, vaddress: VirtualAddress) -> Address {
+        vaddress.0 + self.code.as_ptr() as Address
+    }
+
 }
 
 
@@ -242,8 +279,37 @@ impl VM {
             // There's no need to implement a jump table manually.
             match instruction {
 
-                ByteCodes::LoadStatic => todo!(),
-                ByteCodes::VirtualToReal => todo!(),
+                ByteCodes::VirtualConstToReal => {
+                    let vsrc = VirtualAddress(program.fetch_8() as Address);
+                    self.stack.push_8(program.virtual_to_real(vsrc) as u64);
+                },
+                ByteCodes::VirtualToReal => {
+                    // TODO: here we could avoid popping and pushing the stack pointer by directly writing to the stack.
+                    let vsrc = VirtualAddress(self.stack.pop_8() as Address);
+                    self.stack.push_8(program.virtual_to_real(vsrc) as u64);
+                }
+
+                ByteCodes::LoadStatic1 => {
+                    let vsrc = VirtualAddress(program.fetch_8() as Address);
+                    self.stack.push_1(program.get_static1(vsrc));
+                },
+                ByteCodes::LoadStatic2 => {
+                    let vsrc = VirtualAddress(program.fetch_8() as Address);
+                    self.stack.push_2(program.get_static2(vsrc));
+                },
+                ByteCodes::LoadStatic4 => {
+                    let vsrc = VirtualAddress(program.fetch_8() as Address);
+                    self.stack.push_4(program.get_static4(vsrc));
+                },
+                ByteCodes::LoadStatic8 => {
+                    let vsrc = VirtualAddress(program.fetch_8() as Address);
+                    self.stack.push_8(program.get_static8(vsrc));
+                },
+                ByteCodes::LoadStaticBytes => {
+                    let vsrc = VirtualAddress(program.fetch_8() as Address);
+                    let count = program.fetch_8() as usize;
+                    self.stack.push_bytes(program.get_static_bytes(vsrc, count));
+                },
 
                 ByteCodes::Load1 => {
                     let src = self.stack.pop_8() as *const u8;
@@ -284,6 +350,78 @@ impl VM {
                     self.stack.push_bytes(program.fetch_bytes(count));
                 },
 
+                ByteCodes::Store1 => {
+                    let dest = self.stack.pop_8() as *mut u8;
+                    unsafe {
+                        dest.write(self.stack.pop_1());
+                    }
+                },
+                ByteCodes::Store2 => {
+                    let dest = self.stack.pop_8() as *mut u16;
+                    unsafe {
+                        dest.write(self.stack.pop_2());
+                    }
+                },
+                ByteCodes::Store4 => {
+                    let dest = self.stack.pop_8() as *mut u32;
+                    unsafe {
+                        dest.write(self.stack.pop_4());
+                    }
+                },
+                ByteCodes::Store8 => {
+                    let dest = self.stack.pop_8() as *mut u64;
+                    unsafe {
+                        dest.write(self.stack.pop_8());
+                    }
+                },
+                ByteCodes::StoreBytes => {
+                    let dest = self.stack.pop_8() as *mut u8;
+                    let count = self.stack.pop_8() as usize;
+                    unsafe {
+                        // Note that the stack and whatever memory is being written to must not overlap. It's the programmer's responsibility to ensure this.
+                        dest.copy_from_nonoverlapping(
+                            self.stack.pop_bytes(count).as_ptr(), 
+                            count
+                        );
+                    }
+                },
+
+                ByteCodes::Malloc => {
+                    let size = self.stack.pop_8() as usize;
+                    let addr = unsafe {
+                        match alloc::Layout::array::<u8>(size) {
+                            Ok(layout) => {
+                                alloc::alloc(layout)
+                            },
+                            Err(_) => {
+                                ptr::null_mut()
+                            }
+                        }
+                    };
+                    self.stack.push_8(addr as u64);
+                },
+                ByteCodes::Realloc => {
+                    let addr = self.stack.pop_8() as *mut u8;
+                    let new_size = self.stack.pop_8() as usize;
+                    let new_addr = unsafe {
+                        match alloc::Layout::array::<u8>(new_size) {
+                            Ok(layout) => {
+                                alloc::realloc(addr, layout, new_size)
+                            },
+                            Err(_) => {
+                                ptr::null_mut()
+                            }
+                        }
+                    };
+                    self.stack.push_8(new_addr as u64);
+                },
+                ByteCodes::Free => {
+                    let addr = self.stack.pop_8() as *mut u8;
+                    unsafe {
+                        alloc::dealloc(addr, alloc::Layout::new::<u8>());
+                    }
+                }
+
                 ByteCodes::Nop => { /* Do nothing */ },
                 
 
@@ -292,3 +430,4 @@ impl VM {
     }
 
 }
+

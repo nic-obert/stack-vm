@@ -6,9 +6,10 @@ Project Description
 
 ### Todo
 
+- [ ] write an assembler. advanced parsing would be nice to have. a tokenizer is thus required instead of a simple fixed argument table  
+- [ ] maybe add a few registers to store frequently used variables  
 - [ ] differentiate an optimized execution function and a safe execution function. the optimized execution function skips some safety checks like memory bounds  
 - [ ] add interrupts  
-- [ ] add proxy allocator  
 - [ ] add verbose mode  
 
 ### In Progress
@@ -16,4 +17,5 @@ Project Description
 
 ### Done ✓
 
+- [x] add proxy allocator  
 
