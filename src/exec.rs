@@ -26,7 +26,7 @@ unsafe fn read_address(bytes: *const u8) -> Address {
 struct Stack {
     /// Raw pointer to the top of the stack. Modifying this pointer will directly modify the stack.
     tos: *mut u8,
-    stack: Box<[u8]>
+    stack: Box<[u8]>,
 }
 
 impl Stack {
@@ -252,22 +252,31 @@ impl<'a> Program<'a> {
 
 pub struct VM {
 
-    stack: Stack,
+    /// Operation stack. Stores the operands and results of operations.
+    opstack: Stack,
+    /// Variable stack. Stores the variables in the stack frame.
+    varstack: Stack,
 
 }
+
+// 1 KB should be enough for the operation stack since it stores temporary values (operands and results) 
+// which should not be too large anyway. When processing big chunks of data, we usually use pointers to the data
+// instead of copying the whole data itself.
+const OPSTACK_SIZE: usize = 1024; // 1 KB
+const DEFAULT_VARSTACK_SIZE: usize = 1024 * 1024; // 1 MB
 
 impl VM {
 
     /// Instantiate a new VM with a given stack size.
-    pub fn new(stack_size: usize) -> Self {
+    pub fn new(stack_size: Option<usize>) -> Self {
         Self {
-            stack: Stack::new(stack_size),
+            varstack: Stack::new(stack_size.unwrap_or(DEFAULT_VARSTACK_SIZE)),
+            opstack: Stack::new(OPSTACK_SIZE),
         }
     }
 
 
-
-    pub fn run(&mut self, code: ByteCode<'_>) {
+    pub fn run(&mut self, code: ByteCode<'_>) -> i32 {
 
         let mut program = Program::new(code);
 
@@ -279,115 +288,305 @@ impl VM {
             // There's no need to implement a jump table manually.
             match instruction {
 
+                ByteCodes::AddInt1 => {
+                    let a = self.opstack.pop_1() as i8;
+                    let b = self.opstack.pop_1() as i8;
+                    self.opstack.push_1(a.wrapping_add(b) as u8);
+                },
+                ByteCodes::AddInt2 => {
+                    let a = self.opstack.pop_2() as i16;
+                    let b = self.opstack.pop_2() as i16;
+                    self.opstack.push_2(a.wrapping_add(b) as u16);
+                },
+                ByteCodes::AddInt4 => {
+                    let a = self.opstack.pop_4() as i32;
+                    let b = self.opstack.pop_4() as i32;
+                    self.opstack.push_4(a.wrapping_add(b) as u32);
+                },
+                ByteCodes::AddInt8 => {
+                    let a = self.opstack.pop_8() as i64;
+                    let b = self.opstack.pop_8() as i64;
+                    self.opstack.push_8(a.wrapping_add(b) as u64);
+                },
+                ByteCodes::SubInt1 => {
+                    let a = self.opstack.pop_1() as i8;
+                    let b = self.opstack.pop_1() as i8;
+                    self.opstack.push_1(a.wrapping_sub(b) as u8);
+                },
+                ByteCodes::SubInt2 => {
+                    let a = self.opstack.pop_2() as i16;
+                    let b = self.opstack.pop_2() as i16;
+                    self.opstack.push_2(a.wrapping_sub(b) as u16);
+                },
+                ByteCodes::SubInt4 => {
+                    let a = self.opstack.pop_4() as i32;
+                    let b = self.opstack.pop_4() as i32;
+                    self.opstack.push_4(a.wrapping_sub(b) as u32);
+                },
+                ByteCodes::SubInt8 => {
+                    let a = self.opstack.pop_8() as i64;
+                    let b = self.opstack.pop_8() as i64;
+                    self.opstack.push_8(a.wrapping_sub(b) as u64);
+                },
+                ByteCodes::MulInt1 => {
+                    let a = self.opstack.pop_1() as i8;
+                    let b = self.opstack.pop_1() as i8;
+                    self.opstack.push_1(a.wrapping_mul(b) as u8);
+                },
+                ByteCodes::MulInt2 => {
+                    let a = self.opstack.pop_2() as i16;
+                    let b = self.opstack.pop_2() as i16;
+                    self.opstack.push_2(a.wrapping_mul(b) as u16);
+                },
+                ByteCodes::MulInt4 => {
+                    let a = self.opstack.pop_4() as i32;
+                    let b = self.opstack.pop_4() as i32;
+                    self.opstack.push_4(a.wrapping_mul(b) as u32);
+                },
+                ByteCodes::MulInt8 => {
+                    let a = self.opstack.pop_8() as i64;
+                    let b = self.opstack.pop_8() as i64;
+                    self.opstack.push_8(a.wrapping_mul(b) as u64);
+                },
+                ByteCodes::DivInt1 => {
+                    let a = self.opstack.pop_1() as i8;
+                    let b = self.opstack.pop_1() as i8;
+                    self.opstack.push_1(a.wrapping_div(b) as u8);
+                },
+                ByteCodes::DivInt2 => {
+                    let a = self.opstack.pop_2() as i16;
+                    let b = self.opstack.pop_2() as i16;
+                    self.opstack.push_2(a.wrapping_div(b) as u16);
+                },
+                ByteCodes::DivInt4 => {
+                    let a = self.opstack.pop_4() as i32;
+                    let b = self.opstack.pop_4() as i32;
+                    self.opstack.push_4(a.wrapping_div(b) as u32);
+                },
+                ByteCodes::DivInt8 => {
+                    let a = self.opstack.pop_8() as i64;
+                    let b = self.opstack.pop_8() as i64;
+                    self.opstack.push_8(a.wrapping_div(b) as u64);
+                },
+                ByteCodes::ModInt1 => {
+                    let a = self.opstack.pop_1() as i8;
+                    let b = self.opstack.pop_1() as i8;
+                    self.opstack.push_1(a.wrapping_rem(b) as u8);
+                },
+                ByteCodes::ModInt2 => {
+                    let a = self.opstack.pop_2() as i16;
+                    let b = self.opstack.pop_2() as i16;
+                    self.opstack.push_2(a.wrapping_rem(b) as u16);
+                },
+                ByteCodes::ModInt4 => {
+                    let a = self.opstack.pop_4() as i32;
+                    let b = self.opstack.pop_4() as i32;
+                    self.opstack.push_4(a.wrapping_rem(b) as u32);
+                },
+                ByteCodes::ModInt8 => {
+                    let a = self.opstack.pop_8() as i64;
+                    let b = self.opstack.pop_8() as i64;
+                    self.opstack.push_8(a.wrapping_rem(b) as u64);
+                },
+
+                ByteCodes::AddFloat4 => {
+                    let a = self.opstack.pop_4() as f32;
+                    let b = self.opstack.pop_4() as f32;
+                    self.opstack.push_4((a + b) as u32);
+                },
+                ByteCodes::AddFloat8 => {
+                    let a = self.opstack.pop_8() as f64;
+                    let b = self.opstack.pop_8() as f64;
+                    self.opstack.push_8((a + b) as u64);
+                },
+                ByteCodes::SubFloat4 => {
+                    let a = self.opstack.pop_4() as f32;
+                    let b = self.opstack.pop_4() as f32;
+                    self.opstack.push_4((a - b) as u32);
+                },
+                ByteCodes::SubFloat8 => {
+                    let a = self.opstack.pop_8() as f64;
+                    let b = self.opstack.pop_8() as f64;
+                    self.opstack.push_8((a - b) as u64);
+                },
+                ByteCodes::MulFloat4 => {
+                    let a = self.opstack.pop_4() as f32;
+                    let b = self.opstack.pop_4() as f32;
+                    self.opstack.push_4((a * b) as u32);
+                },
+                ByteCodes::MulFloat8 => {
+                    let a = self.opstack.pop_8() as f64;
+                    let b = self.opstack.pop_8() as f64;
+                    self.opstack.push_8((a * b) as u64);
+                },
+                ByteCodes::DivFloat4 => {
+                    let a = self.opstack.pop_4() as f32;
+                    let b = self.opstack.pop_4() as f32;
+                    self.opstack.push_4((a / b) as u32);
+                },
+                ByteCodes::DivFloat8 => {
+                    let a = self.opstack.pop_8() as f64;
+                    let b = self.opstack.pop_8() as f64;
+                    self.opstack.push_8((a / b) as u64);
+                },
+                ByteCodes::ModFloat4 => {
+                    let a = self.opstack.pop_4() as f32;
+                    let b = self.opstack.pop_4() as f32;
+                    self.opstack.push_4((a % b) as u32);
+                },
+                ByteCodes::ModFloat8 => {
+                    let a = self.opstack.pop_8() as f64;
+                    let b = self.opstack.pop_8() as f64;
+                    self.opstack.push_8((a % b) as u64);
+                },
+
+                ByteCodes::Memmove1 => {
+                    let dest = self.opstack.pop_8() as *mut u8;
+                    let src = self.opstack.pop_8() as *const u8;
+                    unsafe {
+                        dest.write(*src);
+                    }
+                },
+                ByteCodes::Memmove2 => {
+                    let dest = self.opstack.pop_8() as *mut u16;
+                    let src = self.opstack.pop_8() as *const u16;
+                    unsafe {
+                        dest.write(*src)
+                    }
+                },
+                ByteCodes::Memmove4 => {
+                    let dest = self.opstack.pop_8() as *mut u32;
+                    let src = self.opstack.pop_8() as *const u32;
+                    unsafe {
+                        dest.write(*src);
+                    }
+                },
+                ByteCodes::Memmove8 => {
+                    let dest = self.opstack.pop_8() as *mut u64;
+                    let src = self.opstack.pop_8() as *const u64;
+                    unsafe {
+                        dest.write(*src);
+                    }
+                },
+                ByteCodes::MemmoveBytes => {
+                    let dest = self.opstack.pop_8() as *mut u8;
+                    let src = self.opstack.pop_8() as *const u8;
+                    let count = self.opstack.pop_8() as usize;
+                    unsafe {
+                        // Assume the memory regions don't overlap.
+                        dest.copy_from_nonoverlapping(src, count);
+                    }
+                },
+
                 ByteCodes::VirtualConstToReal => {
                     let vsrc = VirtualAddress(program.fetch_8() as Address);
-                    self.stack.push_8(program.virtual_to_real(vsrc) as u64);
+                    self.opstack.push_8(program.virtual_to_real(vsrc) as u64);
                 },
                 ByteCodes::VirtualToReal => {
                     // TODO: here we could avoid popping and pushing the stack pointer by directly writing to the stack.
-                    let vsrc = VirtualAddress(self.stack.pop_8() as Address);
-                    self.stack.push_8(program.virtual_to_real(vsrc) as u64);
+                    let vsrc = VirtualAddress(self.opstack.pop_8() as Address);
+                    self.opstack.push_8(program.virtual_to_real(vsrc) as u64);
                 }
 
                 ByteCodes::LoadStatic1 => {
                     let vsrc = VirtualAddress(program.fetch_8() as Address);
-                    self.stack.push_1(program.get_static1(vsrc));
+                    self.opstack.push_1(program.get_static1(vsrc));
                 },
                 ByteCodes::LoadStatic2 => {
                     let vsrc = VirtualAddress(program.fetch_8() as Address);
-                    self.stack.push_2(program.get_static2(vsrc));
+                    self.opstack.push_2(program.get_static2(vsrc));
                 },
                 ByteCodes::LoadStatic4 => {
                     let vsrc = VirtualAddress(program.fetch_8() as Address);
-                    self.stack.push_4(program.get_static4(vsrc));
+                    self.opstack.push_4(program.get_static4(vsrc));
                 },
                 ByteCodes::LoadStatic8 => {
                     let vsrc = VirtualAddress(program.fetch_8() as Address);
-                    self.stack.push_8(program.get_static8(vsrc));
+                    self.opstack.push_8(program.get_static8(vsrc));
                 },
                 ByteCodes::LoadStaticBytes => {
                     let vsrc = VirtualAddress(program.fetch_8() as Address);
                     let count = program.fetch_8() as usize;
-                    self.stack.push_bytes(program.get_static_bytes(vsrc, count));
+                    self.opstack.push_bytes(program.get_static_bytes(vsrc, count));
                 },
 
                 ByteCodes::Load1 => {
-                    let src = self.stack.pop_8() as *const u8;
-                    self.stack.push_1(unsafe { *src });
+                    let src = self.opstack.pop_8() as *const u8;
+                    self.opstack.push_1(unsafe { *src });
                 },
                 ByteCodes::Load2 => {
-                    let src = self.stack.pop_8() as *const u8;
-                    self.stack.push_2(unsafe { *(src as *const u16) });
+                    let src = self.opstack.pop_8() as *const u8;
+                    self.opstack.push_2(unsafe { *(src as *const u16) });
                 },
                 ByteCodes::Load4 => {
-                    let src = self.stack.pop_8() as *const u8;
-                    self.stack.push_4(unsafe { *(src as *const u32) });
+                    let src = self.opstack.pop_8() as *const u8;
+                    self.opstack.push_4(unsafe { *(src as *const u32) });
                 },
                 ByteCodes::Load8 => {
-                    let src = self.stack.pop_8() as *const u8;
-                    self.stack.push_8(unsafe { *(src as *const u64) });
+                    let src = self.opstack.pop_8() as *const u8;
+                    self.opstack.push_8(unsafe { *(src as *const u64) });
                 },
                 ByteCodes::LoadBytes => {
-                    let src = self.stack.pop_8() as *const u8;
-                    let count = self.stack.pop_8() as usize;
-                    self.stack.push_from(src, count);
+                    let src = self.opstack.pop_8() as *const u8;
+                    let count = self.opstack.pop_8() as usize;
+                    self.opstack.push_from(src, count);
                 },
                 
                 ByteCodes::LoadConst1 => {
-                    self.stack.push_1(program.fetch_1());
+                    self.opstack.push_1(program.fetch_1());
                 },
                 ByteCodes::LoadConst2 => {
-                    self.stack.push_2(program.fetch_2());
+                    self.opstack.push_2(program.fetch_2());
                 },
                 ByteCodes::LoadConst4 => {
-                    self.stack.push_4(program.fetch_4());
+                    self.opstack.push_4(program.fetch_4());
                 },
                 ByteCodes::LoadConst8 => {
-                    self.stack.push_8(program.fetch_8());
+                    self.opstack.push_8(program.fetch_8());
                 },
                 ByteCodes::LoadConstBytes => {
                     let count = program.fetch_8() as usize;
-                    self.stack.push_bytes(program.fetch_bytes(count));
+                    self.opstack.push_bytes(program.fetch_bytes(count));
                 },
 
                 ByteCodes::Store1 => {
-                    let dest = self.stack.pop_8() as *mut u8;
+                    let dest = self.opstack.pop_8() as *mut u8;
                     unsafe {
-                        dest.write(self.stack.pop_1());
+                        dest.write(self.opstack.pop_1());
                     }
                 },
                 ByteCodes::Store2 => {
-                    let dest = self.stack.pop_8() as *mut u16;
+                    let dest = self.opstack.pop_8() as *mut u16;
                     unsafe {
-                        dest.write(self.stack.pop_2());
+                        dest.write(self.opstack.pop_2());
                     }
                 },
                 ByteCodes::Store4 => {
-                    let dest = self.stack.pop_8() as *mut u32;
+                    let dest = self.opstack.pop_8() as *mut u32;
                     unsafe {
-                        dest.write(self.stack.pop_4());
+                        dest.write(self.opstack.pop_4());
                     }
                 },
                 ByteCodes::Store8 => {
-                    let dest = self.stack.pop_8() as *mut u64;
+                    let dest = self.opstack.pop_8() as *mut u64;
                     unsafe {
-                        dest.write(self.stack.pop_8());
+                        dest.write(self.opstack.pop_8());
                     }
                 },
                 ByteCodes::StoreBytes => {
-                    let dest = self.stack.pop_8() as *mut u8;
-                    let count = self.stack.pop_8() as usize;
+                    let dest = self.opstack.pop_8() as *mut u8;
+                    let count = self.opstack.pop_8() as usize;
                     unsafe {
                         // Note that the stack and whatever memory is being written to must not overlap. It's the programmer's responsibility to ensure this.
                         dest.copy_from_nonoverlapping(
-                            self.stack.pop_bytes(count).as_ptr(), 
+                            self.opstack.pop_bytes(count).as_ptr(), 
                             count
                         );
                     }
                 },
 
                 ByteCodes::Malloc => {
-                    let size = self.stack.pop_8() as usize;
+                    let size = self.opstack.pop_8() as usize;
                     let addr = unsafe {
                         match alloc::Layout::array::<u8>(size) {
                             Ok(layout) => {
@@ -398,11 +597,11 @@ impl VM {
                             }
                         }
                     };
-                    self.stack.push_8(addr as u64);
+                    self.opstack.push_8(addr as u64);
                 },
                 ByteCodes::Realloc => {
-                    let addr = self.stack.pop_8() as *mut u8;
-                    let new_size = self.stack.pop_8() as usize;
+                    let addr = self.opstack.pop_8() as *mut u8;
+                    let new_size = self.opstack.pop_8() as usize;
                     let new_addr = unsafe {
                         match alloc::Layout::array::<u8>(new_size) {
                             Ok(layout) => {
@@ -413,17 +612,21 @@ impl VM {
                             }
                         }
                     };
-                    self.stack.push_8(new_addr as u64);
+                    self.opstack.push_8(new_addr as u64);
                 },
                 ByteCodes::Free => {
-                    let addr = self.stack.pop_8() as *mut u8;
+                    let addr = self.opstack.pop_8() as *mut u8;
                     unsafe {
                         alloc::dealloc(addr, alloc::Layout::new::<u8>());
                     }
-                }
+                },
+
+                ByteCodes::Exit => {
+                    let code = self.opstack.pop_4() as i32;
+                    return code;
+                },
 
                 ByteCodes::Nop => { /* Do nothing */ },
-                
 
             }
         }

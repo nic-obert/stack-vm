@@ -2,7 +2,8 @@
 
 - [HiVM - High Level Virtual Machine](#hivm---high-level-virtual-machine)
   - [VM Design](#vm-design)
-    - [Stack](#stack)
+    - [Variable Stack](#variable-stack)
+    - [Operation Stack](#operation-stack)
     - [Heap](#heap)
     - [Program counter](#program-counter)
     - [Stack pointer](#stack-pointer)
@@ -22,14 +23,19 @@ HiVM's memory is an interface between the program and the host machine/OS. Point
 
 Now, since HiVM programs have direct access to the host memory, there is the possibility of accessing the host's resources. It is up to the host OS to prevent illegal memory accesses and segfault accordingly.
 
-### Stack
+### Variable Stack
 
-The core component of HiVM is the stack. The stack is a contiguous section of memory used to store local variables, return values, function call arguments, and such.
+The variable stack is a contiguous section of memory used to store symbol values (e.g. local variables, globals).  
 The stack has a fixed size that is determined at the start of the program and cannot change at runtime.
 
 Popping form and pushing onto the stack are fast operations since there's no allocation involved. The stack pointer is incremented or decremented to keep track of the top of the stack.
 
 The stack grows top-to-bottom. Popping form the stack increments the stack pointer while pushing onto the stack decrements the stack pointer.
+
+### Operation Stack
+
+The operation stack is a contiguous section of memory used to store temporary vales related to ongoing operations (operands and results).  
+The stack has a fized size and grows from top-to-bottom.
 
 ### Heap
 

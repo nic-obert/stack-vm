@@ -12,8 +12,8 @@ pub struct CliParser {
     pub input_file: PathBuf,
 
     /// Set the stack size in bytes.
-    #[clap(default_value="1000000")]
-    pub stack_size: usize,
+    #[clap()]
+    pub stack_size: Option<usize>,
 
     /// Execute in verbose mode.
     #[clap(short='v', long)]

@@ -8,7 +8,6 @@ use clap::Parser;
 use cli_parser::CliParser;
 
 
-
 fn main() {
     
     let args = CliParser::parse();
@@ -18,7 +17,8 @@ fn main() {
 
     let mut vm = exec::VM::new(args.stack_size);
 
-    vm.run(&bytecode);
+    let code = vm.run(&bytecode);
 
+    std::process::exit(code);
 }
 
