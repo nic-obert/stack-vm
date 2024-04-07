@@ -51,6 +51,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "assembler"
+version = "0.1.0"
+
+[[package]]
 name = "clap"
 version = "4.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -107,8 +111,13 @@ name = "hivm"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "hivmlib",
  "static_assertions",
 ]
+
+[[package]]
+name = "hivmlib"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"

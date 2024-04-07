@@ -1,5 +1,4 @@
 mod exec;
-mod bytecode;
 mod cli_parser;
 
 use std::fs;

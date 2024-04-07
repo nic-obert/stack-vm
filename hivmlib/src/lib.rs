@@ -1,3 +1,4 @@
+use std::mem;
 
 
 /// HiVM instructions. Each instruction is represented by one byte.
@@ -73,6 +74,8 @@ pub enum ByteCodes {
     Realloc,
     Free,
 
+    Intr,
+
     Exit,
 
     /// No operation. Do nothing for this cycle.
@@ -81,11 +84,27 @@ pub enum ByteCodes {
 }
 
 impl From<u8> for ByteCodes {
+    /// Convert a byte to an intruction code. An invalid interrupt code will result in undefined behavior.
     fn from(byte: u8) -> Self {
         unsafe {
-            std::mem::transmute(byte)
+            mem::transmute(byte)
         }
     }
 
+}
+
+
+#[repr(u8)]
+pub enum Interrupts {
+    Write,
+}
+
+impl From<u8> for Interrupts {
+    /// Convert a byte to an interrupt code. An invalid interrupt code will result in undefined behavior.
+    fn from(byte: u8) -> Self {
+        unsafe {
+            mem::transmute(byte)
+        }
+    }
 }
 

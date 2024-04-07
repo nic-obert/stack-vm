@@ -1,6 +1,7 @@
 use static_assertions::const_assert_eq;
 
-use crate::bytecode::ByteCodes;
+use hivmlib::ByteCodes;
+use hivmlib::Interrupts;
 
 use std::mem::{self, MaybeUninit};
 use std::alloc;
@@ -626,9 +627,21 @@ impl VM {
                     return code;
                 },
 
+                ByteCodes::Intr => {
+                    let intr_code = Interrupts::from(self.opstack.pop_1());
+                    self.handle_interrupt(intr_code);
+                },
+
                 ByteCodes::Nop => { /* Do nothing */ },
 
             }
+        }
+    }
+
+
+    fn handle_interrupt(&mut self, intr_code: Interrupts) {
+        match intr_code {
+            Interrupts::Write => todo!(),
         }
     }
 
