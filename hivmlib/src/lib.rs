@@ -1,6 +1,9 @@
 use std::mem;
 
 
+pub type ByteCode<'a> = &'a [u8];
+
+
 /// HiVM instructions. Each instruction is represented by one byte.
 #[repr(u8)]
 pub enum ByteCodes {

@@ -53,6 +53,10 @@ dependencies = [
 [[package]]
 name = "assembler"
 version = "0.1.0"
+dependencies = [
+ "clap",
+ "hivmlib",
+]
 
 [[package]]
 name = "clap"

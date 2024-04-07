@@ -1,7 +1,6 @@
 use static_assertions::const_assert_eq;
 
-use hivmlib::ByteCodes;
-use hivmlib::Interrupts;
+use hivmlib::{ByteCodes, Interrupts, ByteCode};
 
 use std::mem::{self, MaybeUninit};
 use std::alloc;
@@ -13,8 +12,6 @@ pub type Address = usize;
 pub struct VirtualAddress(Address);
 
 const_assert_eq!(mem::size_of::<VirtualAddress>(), mem::size_of::<usize>());
-
-pub type ByteCode<'a> = &'a [u8];
 
 
 /// Interprets the first 8 bytes of the given byte slice as an address.
