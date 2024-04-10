@@ -1,4 +1,5 @@
-use std::{borrow::Cow, path::{Display, Path}};
+use std::path::Path;
+use std::borrow::Cow;
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -11,7 +12,7 @@ use crate::errors;
 lazy_static! {
 
     static ref TOKEN_REGEX: Regex = Regex::new(
-        r#"(?m)'(?:\\'|[^'])*'|"(?:\\"|[^"])*"|[_a-zA-Z][_A-Za-z\d]*|0x[a-fA-F\d]+|[+-]?\d+[.]\d*|[+-]?[.]?\d+|[-+\/%@#$:.=]|\S"#
+        r#"(?m)'(?:\\'|[^'])*'|"(?:\\"|[^"])*"|[_a-zA-Z]\w*|0x[a-fA-F\d]+|-?\d+[.]\d*|-?[.]?\d+|[-+\/%@#$:.=]|\S"#
     ).unwrap();
 
     static ref IDENTIFIER_REGEX: Regex = Regex::new(

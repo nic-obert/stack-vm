@@ -36,7 +36,6 @@ pub fn print_source_context(source: SourceCode, line_index: usize, char_pointer:
 }
 
 
-
 pub fn io_error(err: io::Error) -> ! {
     eprintln!("IO error: {}", err);
     std::process::exit(1);

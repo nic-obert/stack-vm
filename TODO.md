@@ -10,7 +10,7 @@ Project Description
 - [ ] implement assembly sections  
 - [ ] implement macros  
 - [ ] implement a primitive assembly module system like #include in C  
-- [ ] implement in-place math in assembly  
+- [ ] implement in-place math in assembly for constants  
 - [ ] implement io interface through interrupts  
 - [ ] we may incur in alignment problems when interpreting random memory addresses as *T. Testing is needed  
 - [ ] maybe add a few registers to store frequently used variables  
