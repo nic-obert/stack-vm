@@ -1,17 +1,9 @@
-use static_assertions::const_assert_eq;
 
-use hivmlib::{ByteCodes, Interrupts, ByteCode};
+use hivmlib::{ByteCodes, Interrupts, ByteCode, VirtualAddress, Address};
 
 use std::mem::{self, MaybeUninit};
 use std::alloc;
 use std::ptr;
-
-pub type Address = usize;
-
-#[derive(Default)]
-pub struct VirtualAddress(Address);
-
-const_assert_eq!(mem::size_of::<VirtualAddress>(), mem::size_of::<usize>());
 
 
 /// Interprets the first 8 bytes of the given byte slice as an address.
@@ -665,14 +657,19 @@ impl VM {
                 },
 
                 ByteCodes::Exit => {
-                    let code = self.opstack.pop_4() as i32;
-                    return code;
+                    let exit_code = self.opstack.pop_4() as i32;
+                    return exit_code;
                 },
 
                 ByteCodes::Intr => {
                     let intr_code = Interrupts::from(self.opstack.pop_1());
                     self.handle_interrupt(intr_code);
                 },
+
+                ByteCodes::IntrConst => {
+                    let intr_code = Interrupts::from(self.opstack.pop_1());
+                    self.handle_interrupt(intr_code);
+                }
 
                 ByteCodes::Duplicate1 => {
                     self.opstack.push_1(

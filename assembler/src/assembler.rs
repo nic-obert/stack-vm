@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::borrow::Cow;
+use std::mem;
 
+use static_assertions::const_assert_eq;
 use lazy_static::lazy_static;
 use regex::Regex;
 
-use hivmlib::ByteCodes;
+use hivmlib::{ByteCodes, Interrupts, VirtualAddress};
 
 use crate::errors;
 
@@ -116,6 +119,17 @@ fn lex<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> impl Iterator<Item = 
                     )
                 }
             }
+
+            // Add a final newline token that will be used as a delimiter during parsing
+            matches.push(
+                SourceToken {
+                    string: "\n",
+                    unit_path,
+                    line_index,
+                    column: line.len()
+                }
+            );
+
             matches
         }
     )
@@ -161,6 +175,51 @@ enum TokenValue<'a> {
     Mod,
     Dot,
     Equal,
+    Endline,
+}
+
+impl TokenValue<'_> {
+
+    fn base_priority(&self) -> TokenPriority {
+        match self {
+            TokenValue::StringLiteral(_) |
+            TokenValue::CharLiteral(_) |
+            TokenValue::Number(_) | 
+            TokenValue::Identifier(_) |
+            TokenValue::Colon |
+            TokenValue::Endline
+                => TokenPriority::None,
+
+            TokenValue::Instruction(_) => TokenPriority::Instruction,
+
+            TokenValue::Plus |
+            TokenValue::Minus
+                => TokenPriority::PlusMinus,
+
+            TokenValue::Star |
+            TokenValue::Div |
+            TokenValue::Mod
+                => TokenPriority::MulDivMod,
+
+            TokenValue::Dollar |
+            TokenValue::At |
+            TokenValue::Dot |
+            TokenValue::Equal
+                => TokenPriority::AsmOperator,
+        }
+    }
+
+}
+
+
+#[derive(PartialOrd, PartialEq)]
+enum TokenPriority {
+    None = 0,
+    Instruction,
+    PlusMinus,
+    MulDivMod,
+    AsmOperator,
+    Max, // TODO: maybe this shouldn't exist??
 }
 
 
@@ -179,6 +238,8 @@ fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> Vec<Token<'a>> {
     for token in raw_tokens {
 
         let token_value = match token.string {
+
+            "\n" => TokenValue::Endline,
 
             "=" => TokenValue::Equal,
 
@@ -264,15 +325,192 @@ fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> Vec<Token<'a>> {
 }
 
 
-pub fn assemble<'a>(source: &'a str, unit_path: &'a Path) -> Vec<u8> {
+struct Symbol<'a> {
 
-    let source = source.lines().collect::<Vec<_>>();
+    source: SourceToken<'a>,
+
+}
+
+
+struct SymbolTable<'a> {
+
+    symbols: HashMap<&'a str, Symbol<'a>>
+
+}
+
+
+/// Representation of assembly instructions and their operands
+enum AsmInstruction {
+    
+    AddInt1,
+    AddInt2,
+    AddInt4,
+    AddInt8,
+    SubInt1,
+    SubInt2,
+    SubInt4,
+    SubInt8,
+    MulInt1,
+    MulInt2,
+    MulInt4,
+    MulInt8,
+    DivInt1,
+    DivInt2,
+    DivInt4,
+    DivInt8,
+    ModInt1,
+    ModInt2,
+    ModInt4,
+    ModInt8,
+
+    AddFloat4,
+    AddFloat8,
+    SubFloat4,
+    SubFloat8,
+    MulFloat4,
+    MulFloat8,
+    DivFloat4,
+    DivFloat8,
+    ModFloat4,
+    ModFloat8,
+
+    LoadStatic1 { addr: VirtualAddress },
+    LoadStatic2 { addr: VirtualAddress },
+    LoadStatic4 { addr: VirtualAddress },
+    LoadStatic8 { addr: VirtualAddress },
+    LoadStaticBytes { addr: VirtualAddress },
+
+    LoadConst1 { value: u8 },
+    LoadConst2 { value: u16 },
+    LoadConst4 { value: u32 },
+    LoadConst8 { value: u64 },
+    LoadConstBytes { value: Vec<u8> }, // TODO: maybe this should be a slice?
+
+    Load1,
+    Load2,
+    Load4,
+    Load8,
+    LoadBytes,
+
+    VirtualConstToReal { addr: VirtualAddress },
+    VirtualToReal,
+
+    Store1,
+    Store2,
+    Store4,
+    Store8,
+    StoreBytes,
+
+    Memmove1,
+    Memmove2,
+    Memmove4,
+    Memmove8,
+    MemmoveBytes,
+
+    Duplicate1,
+    Duplicate2,
+    Duplicate4,
+    Duplicate8,
+    DuplicateBytes,
+
+    Malloc,
+    Realloc,
+    Free,
+
+    Intr,
+    IntrConst { code: Interrupts },
+
+    Exit,
+
+    Nop
+
+}
+
+const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>());
+
+
+enum AsmSection {
+    Text,
+    Static,
+}
+
+
+enum AsmNode<'a> {
+    Instruction(AsmInstruction),
+    Label(&'a str),
+    Section(AsmSection),
+    // MacroDef, TODO
+    // MacroCall, TODO
+
+}
+
+
+fn get_highest_priority<'a>(tokens: &'a [Token<'a>]) -> Option<usize> {
+    
+    let mut highest_priority = TokenPriority::None;
+    let mut highest_priority_index = None;
+
+    for (i, token) in tokens.iter().enumerate() {
+
+        if matches!(token.value, TokenValue::Endline) {
+            break;
+        }
+
+        let priority = token.value.base_priority();
+        if priority > highest_priority {
+            highest_priority = priority;
+            highest_priority_index = Some(i);
+        }
+    }
+
+    highest_priority_index
+}
+
+
+fn next_line<'a>(tokens: &'a [Token<'a>]) -> Option<&'a [Token<'a>]> {
+    let mut i = 0;
+    while i < tokens.len() && !matches!(tokens[i].value, TokenValue::Endline) {
+        i += 1;
+    }
+
+    if i == tokens.len() {
+        None
+    } else {
+        Some(&tokens[i + 1..])
+    }
+}
+
+
+fn parse<'a>(mut tokens: &'a [Token<'a>], source: SourceCode<'a>, unit_path: &'a Path) -> Vec<AsmNode<'a>> {
+    
+    let mut nodes = Vec::new();
+
+    while let Some(line) = next_line(tokens) {
+
+        tokens = &tokens[line.len()..];
+
+        let highest_priority_index = get_highest_priority(line);
+
+        // TODO: maybe we need to use a linked list for the tokens?
+        // could be overkill, though. 
+
+    }
+
+    nodes
+}
+
+
+pub fn assemble<'a>(raw_source: &'a str, unit_path: &'a Path) -> Vec<u8> {
+
+    let source = raw_source.lines().collect::<Vec<_>>();
     
     let tokens = tokenize(&source, unit_path);
 
     for token in &tokens {
         println!("{}", token);
     }
+
+    let asm = parse(&tokens, &source, unit_path);
 
     todo!()
 }

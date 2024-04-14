@@ -68,6 +68,7 @@ dependencies = [
  "hivmlib",
  "lazy_static",
  "regex",
+ "static_assertions",
 ]
 
 [[package]]
@@ -144,6 +145,9 @@ dependencies = [
 [[package]]
 name = "hivmlib"
 version = "0.1.0"
+dependencies = [
+ "static_assertions",
+]
 
 [[package]]
 name = "lazy_static"

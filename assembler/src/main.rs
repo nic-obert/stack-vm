@@ -1,3 +1,5 @@
+#![feature(variant_count)]
+
 mod cli_parser;
 mod files;
 mod assembler;

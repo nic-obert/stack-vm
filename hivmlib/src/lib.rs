@@ -1,5 +1,15 @@
 use std::mem;
 
+use static_assertions::const_assert_eq;
+
+
+pub type Address = usize;
+
+#[derive(Default)]
+pub struct VirtualAddress(pub Address);
+
+const_assert_eq!(mem::size_of::<VirtualAddress>(), mem::size_of::<usize>());
+
 
 pub type ByteCode<'a> = &'a [u8];
 
@@ -9,7 +19,7 @@ pub type ByteCode<'a> = &'a [u8];
 #[repr(u8)]
 pub enum ByteCodes {
 
-    AddInt1,
+    AddInt1 = 0,
     AddInt2,
     AddInt4,
     AddInt8,
@@ -85,6 +95,7 @@ pub enum ByteCodes {
     Free,
 
     Intr,
+    IntrConst,
 
     Exit,
 
