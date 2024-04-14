@@ -74,6 +74,12 @@ pub enum ByteCodes {
     Memmove8,
     MemmoveBytes,
 
+    Duplicate1,
+    Duplicate2,
+    Duplicate4,
+    Duplicate8,
+    DuplicateBytes,
+
     Malloc,
     Realloc,
     Free,

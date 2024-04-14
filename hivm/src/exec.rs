@@ -44,6 +44,51 @@ impl Stack {
     }
 
 
+    pub unsafe fn tos(&self) -> *const u8 {
+        self.tos
+    }
+
+
+    pub unsafe fn tos_mut(&mut self) -> *mut u8 {
+        self.tos
+    }
+
+
+    pub fn peek_1(&self) -> u8 {
+        unsafe {
+            self.tos.byte_sub(mem::size_of::<u8>()).read()
+        }
+    }
+
+
+    pub fn peek_2(&self) -> u16 {
+        unsafe {
+            (self.tos.byte_sub(mem::size_of::<u16>()) as *const u16).read()
+        }
+    }
+
+
+    pub fn peek_4(&self) -> u32 {
+        unsafe {
+            (self.tos.byte_sub(mem::size_of::<u32>()) as *const u32).read()
+        }
+    }
+
+
+    pub fn peek_8(&self) -> u64 {
+        unsafe {
+            (self.tos.byte_sub(mem::size_of::<u64>()) as *const u64).read()
+        }
+    }
+
+
+    pub fn peek_bytes(&self, count: usize) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self.tos.byte_sub(count), count)
+        }
+    }
+
+
     pub fn push_1(&mut self, byte: u8) {
         unsafe {
             self.tos = self.tos.byte_sub(mem::size_of::<u8>());
@@ -628,6 +673,36 @@ impl VM {
                     let intr_code = Interrupts::from(self.opstack.pop_1());
                     self.handle_interrupt(intr_code);
                 },
+
+                ByteCodes::Duplicate1 => {
+                    self.opstack.push_1(
+                        self.opstack.peek_1()
+                    );
+                },
+
+                ByteCodes::Duplicate2 => {
+                    self.opstack.push_2(
+                        self.opstack.peek_2()
+                    );
+                },
+
+                ByteCodes::Duplicate4 => {
+                    self.opstack.push_4(
+                        self.opstack.peek_4()
+                    );
+                },
+
+                ByteCodes::Duplicate8 => {
+                    self.opstack.push_8(
+                        self.opstack.peek_8()
+                    );
+                },
+
+                ByteCodes::DuplicateBytes => {
+                    let count = self.opstack.pop_8() as usize;
+                    let bytes = unsafe { std::slice::from_raw_parts(self.opstack.tos(), count) };
+                    self.opstack.push_bytes(bytes);
+                }
 
                 ByteCodes::Nop => { /* Do nothing */ },
 
