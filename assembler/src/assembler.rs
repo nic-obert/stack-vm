@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 use std::path::Path;
 use std::borrow::Cow;
 use std::mem;
@@ -9,7 +9,12 @@ use regex::Regex;
 
 use hivmlib::{ByteCodes, Interrupts, VirtualAddress};
 
+use open_linked_list::{OpenLinkedList, OpenNode};
+
 use crate::errors;
+
+
+type TokenList<'a> = OpenLinkedList<Token<'a>>;
 
 
 lazy_static! {
@@ -94,9 +99,9 @@ fn escape_string<'a>(string: &'a str, token: &SourceToken, source: SourceCode) -
 
 
 
-fn lex<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> impl Iterator<Item = SourceToken<'a>> {
+fn lex<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> impl Iterator<Item = Vec<SourceToken<'a>>> {
 
-    source.iter().enumerate().flat_map(
+    source.iter().enumerate().map(
         |(line_index, line)| {
 
             if line.trim().is_empty() {
@@ -120,16 +125,6 @@ fn lex<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> impl Iterator<Item = 
                 }
             }
 
-            // Add a final newline token that will be used as a delimiter during parsing
-            matches.push(
-                SourceToken {
-                    string: "\n",
-                    unit_path,
-                    line_index,
-                    column: line.len()
-                }
-            );
-
             matches
         }
     )
@@ -140,7 +135,8 @@ fn lex<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> impl Iterator<Item = 
 #[derive(Debug)]
 struct Token<'a> {
     source: SourceToken<'a>,
-    value: TokenValue<'a>
+    value: TokenValue<'a>,
+    priority: TokenPriority
 }
 
 impl std::fmt::Display for Token<'_> {
@@ -180,7 +176,7 @@ enum TokenValue<'a> {
 
 impl TokenValue<'_> {
 
-    fn base_priority(&self) -> TokenPriority {
+    fn base_priority(&self) -> TokenBasePriority {
         match self {
             TokenValue::StringLiteral(_) |
             TokenValue::CharLiteral(_) |
@@ -188,24 +184,24 @@ impl TokenValue<'_> {
             TokenValue::Identifier(_) |
             TokenValue::Colon |
             TokenValue::Endline
-                => TokenPriority::None,
+                => TokenBasePriority::None,
 
-            TokenValue::Instruction(_) => TokenPriority::Instruction,
+            TokenValue::Instruction(_) => TokenBasePriority::Instruction,
 
             TokenValue::Plus |
             TokenValue::Minus
-                => TokenPriority::PlusMinus,
+                => TokenBasePriority::PlusMinus,
 
             TokenValue::Star |
             TokenValue::Div |
             TokenValue::Mod
-                => TokenPriority::MulDivMod,
+                => TokenBasePriority::MulDivMod,
 
             TokenValue::Dollar |
             TokenValue::At |
             TokenValue::Dot |
             TokenValue::Equal
-                => TokenPriority::AsmOperator,
+                => TokenBasePriority::AsmOperator,
         }
     }
 
@@ -213,7 +209,7 @@ impl TokenValue<'_> {
 
 
 #[derive(PartialOrd, PartialEq)]
-enum TokenPriority {
+enum TokenBasePriority {
     None = 0,
     Instruction,
     PlusMinus,
@@ -223,105 +219,115 @@ enum TokenPriority {
 }
 
 
+/// Total priority of a token. u8 should be enough for assembly.
+type TokenPriority = u8;
+
+
 #[inline]
 fn is_decimal_numeric(c: char) -> bool {
     c.is_numeric() || c == '-' || c == '+' || c == '.'
 }
 
 
-fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> Vec<Token<'a>> {
+fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> Vec<TokenList<'a>> {
     
-    let raw_tokens = lex(source, unit_path);
+    let raw_lines = lex(source, unit_path);
 
-    let mut tokens = Vec::new();
+    let mut lines = Vec::with_capacity(source.len());
 
-    for token in raw_tokens {
+    for raw_line in raw_lines {
 
-        let token_value = match token.string {
+        let mut current_line = TokenList::new();
 
-            "\n" => TokenValue::Endline,
+        for token in raw_line {
 
-            "=" => TokenValue::Equal,
+            let token_value = match token.string {
 
-            "." => TokenValue::Dot,
-            
-            "+" => TokenValue::Plus,
-            
-            "-" => TokenValue::Minus,
-            
-            "*" => TokenValue::Star,
-            
-            "/" => TokenValue::Div,
+                "=" => TokenValue::Equal,
 
-            "%" => TokenValue::Mod,
+                "." => TokenValue::Dot,
+                
+                "+" => TokenValue::Plus,
+                
+                "-" => TokenValue::Minus,
+                
+                "*" => TokenValue::Star,
+                
+                "/" => TokenValue::Div,
 
-            ":" => TokenValue::Colon,
+                "%" => TokenValue::Mod,
 
-            "$" => TokenValue::Dollar,
+                ":" => TokenValue::Colon,
 
-            "@" => TokenValue::At,
+                "$" => TokenValue::Dollar,
 
-            string if string.starts_with("0x") => {
-                TokenValue::Number(Number::Uint(u64::from_str_radix(&string[2..], 16).unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str()))))
-            },
+                "@" => TokenValue::At,
 
-            string if string.starts_with(is_decimal_numeric) => {
-                TokenValue::Number(if string.contains('.') {
-                    Number::Float(string.parse::<f64>().unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str())))
-                } else if string.starts_with('-') {
-                    Number::Int(string.parse::<i64>().unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str())))
-                } else {
-                    Number::Uint(string.parse::<u64>().unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str())))
-                })
-            },
+                string if string.starts_with("0x") => {
+                    TokenValue::Number(Number::Uint(u64::from_str_radix(&string[2..], 16).unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str()))))
+                },
 
-            string if string.starts_with('"') => {
+                string if string.starts_with(is_decimal_numeric) => {
+                    TokenValue::Number(if string.contains('.') {
+                        Number::Float(string.parse::<f64>().unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str())))
+                    } else if string.starts_with('-') {
+                        Number::Int(string.parse::<i64>().unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str())))
+                    } else {
+                        Number::Uint(string.parse::<u64>().unwrap_or_else(|err| errors::parsing_error(&token, source, err.to_string().as_str())))
+                    })
+                },
 
-                if !string.ends_with('"') {
-                    errors::parsing_error(&token, source, "Unterminated string literal.");
+                string if string.starts_with('"') => {
+
+                    if !string.ends_with('"') {
+                        errors::parsing_error(&token, source, "Unterminated string literal.");
+                    }
+
+                    TokenValue::StringLiteral(escape_string(string, &token, source))
+                },
+        
+                string if string.starts_with('\'') => {
+
+                    if !string.ends_with('\'') {
+                        errors::parsing_error(&token, source, "Unterminated character literal.");
+                    }
+
+                    let escaped_string = escape_string(string, &token, source);
+
+                    if escaped_string.len() != 3 {
+                        errors::parsing_error(&token, source, "Invalid character literal. A character literal can only contain one character.");
+                    }
+
+                    TokenValue::CharLiteral(
+                        escaped_string.chars().next().unwrap()
+                    )
+                },
+
+                string => {
+
+                    if let Some(instruction) = ByteCodes::from_string(string) {
+                        TokenValue::Instruction(instruction)
+                    } else if IDENTIFIER_REGEX.is_match(string) {
+                        TokenValue::Identifier(string)
+                    } else {
+                        errors::parsing_error(&token, source, "Invalid token.")
+                    }
                 }
 
-                TokenValue::StringLiteral(escape_string(string, &token, source))
-            },
-    
-            string if string.starts_with('\'') => {
+            };
 
-                if !string.ends_with('\'') {
-                    errors::parsing_error(&token, source, "Unterminated character literal.");
-                }
+            current_line.push_back(Token {
+                source: token,
+                priority: token_value.base_priority() as TokenPriority, // TODO: implement increased priority inside delimiters
+                value: token_value,
+            });
 
-                let escaped_string = escape_string(string, &token, source);
+        }
 
-                if escaped_string.len() != 3 {
-                    errors::parsing_error(&token, source, "Invalid character literal. A character literal can only contain one character.");
-                }
-
-                TokenValue::CharLiteral(
-                    escaped_string.chars().next().unwrap()
-                )
-            },
-
-            string => {
-
-                if let Some(instruction) = ByteCodes::from_string(string) {
-                    TokenValue::Instruction(instruction)
-                } else if IDENTIFIER_REGEX.is_match(string) {
-                    TokenValue::Identifier(string)
-                } else {
-                    errors::parsing_error(&token, source, "Invalid token.")
-                }
-            }
-
-        };
-
-        tokens.push(Token {
-            source: token,
-            value: token_value
-        });
-
+        lines.push(current_line);
     }
 
-    tokens
+    lines
 }
 
 
@@ -445,55 +451,93 @@ enum AsmNode<'a> {
 }
 
 
-fn get_highest_priority<'a>(tokens: &'a [Token<'a>]) -> Option<usize> {
+fn get_highest_priority<'a>(tokens: &TokenList<'a>) -> Option<*mut OpenNode<Token<'a>>> {
     
-    let mut highest_priority = TokenPriority::None;
-    let mut highest_priority_index = None;
+    let mut highest_priority = TokenBasePriority::None as TokenPriority;
+    let mut highest_priority_node = None;
 
-    for (i, token) in tokens.iter().enumerate() {
+    let mut node_ptr = unsafe { tokens.head() };
 
-        if matches!(token.value, TokenValue::Endline) {
-            break;
-        }
+    while let Some(node) = unsafe { node_ptr.as_ref() } {
 
-        let priority = token.value.base_priority();
+        let priority = node.data.priority; // TODO: change this when implementing increased priority inside delimiters
+
         if priority > highest_priority {
             highest_priority = priority;
-            highest_priority_index = Some(i);
+            highest_priority_node = Some(node_ptr);
         }
+
+        node_ptr = unsafe { node.next() };
     }
 
-    highest_priority_index
+    highest_priority_node
 }
 
 
-fn next_line<'a>(tokens: &'a [Token<'a>]) -> Option<&'a [Token<'a>]> {
-    let mut i = 0;
-    while i < tokens.len() && !matches!(tokens[i].value, TokenValue::Endline) {
-        i += 1;
-    }
+// fn next_line<'a>(tokens: &'a [Token<'a>]) -> Option<&'a [Token<'a>]> {
+//     let mut i = 0;
+//     while i < tokens.len() && !matches!(tokens[i].value, TokenValue::Endline) {
+//         i += 1;
+//     }
 
-    if i == tokens.len() {
-        None
-    } else {
-        Some(&tokens[i + 1..])
-    }
-}
+//     if i == tokens.len() {
+//         None
+//     } else {
+//         Some(&tokens[i + 1..])
+//     }
+// }
 
 
-fn parse<'a>(mut tokens: &'a [Token<'a>], source: SourceCode<'a>, unit_path: &'a Path) -> Vec<AsmNode<'a>> {
-    
+fn parse<'a>(token_lines: Vec<TokenList>, source: SourceCode<'a>, unit_path: &'a Path) -> Vec<AsmNode<'a>> {
+
     let mut nodes = Vec::new();
 
-    while let Some(line) = next_line(tokens) {
+    let mut i: usize = 0;
 
-        tokens = &tokens[line.len()..];
+    macro_rules! next_line {
+        () => {
+            i += 1;
+            continue;
+        };
+    }
 
-        let highest_priority_index = get_highest_priority(line);
+    loop {
 
-        // TODO: maybe we need to use a linked list for the tokens?
-        // could be overkill, though. 
+        let line = &token_lines[i];
 
+        let highest_priority_node = if let Some(node) = get_highest_priority(line) {
+            unsafe { node.as_mut().unwrap() }
+        } else {
+            next_line!();
+        };
+
+        if highest_priority_node.data.priority == 0 {
+            // There's nothing more to parse in this line
+            todo!()
+        }
+        // Set priority to 0 so not to parse the same token again
+        highest_priority_node.data.priority = 0;
+
+        match highest_priority_node.data.value {
+            TokenValue::StringLiteral(_) => todo!(),
+            TokenValue::CharLiteral(_) => todo!(),
+            TokenValue::Colon => todo!(),
+            TokenValue::At => todo!(),
+            TokenValue::Number(_) => todo!(),
+            TokenValue::Identifier(_) => todo!(),
+            TokenValue::Instruction(_) => todo!(),
+            TokenValue::Dollar => todo!(),
+            TokenValue::Plus => todo!(),
+            TokenValue::Minus => todo!(),
+            TokenValue::Star => todo!(),
+            TokenValue::Div => todo!(),
+            TokenValue::Mod => todo!(),
+            TokenValue::Dot => todo!(),
+            TokenValue::Equal => todo!(),
+            TokenValue::Endline => todo!(),
+        }
+        
+        next_line!();
     }
 
     nodes
@@ -504,13 +548,15 @@ pub fn assemble<'a>(raw_source: &'a str, unit_path: &'a Path) -> Vec<u8> {
 
     let source = raw_source.lines().collect::<Vec<_>>();
     
-    let tokens = tokenize(&source, unit_path);
+    let token_lines = tokenize(&source, unit_path);
 
-    for token in &tokens {
-        println!("{}", token);
+    for line in &token_lines {
+        for token in line.iter() {
+            println!("{}", token);
+        }
     }
 
-    let asm = parse(&tokens, &source, unit_path);
+    let asm = parse(token_lines, &source, unit_path);
 
     todo!()
 }

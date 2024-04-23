@@ -6,6 +6,7 @@ Project Description
 
 ### Todo
 
+- [ ] implement increased priority inside delimiters  
 - [ ] refactor the project and divide tasks into different files  
 - [ ] write assembly documentation  
 - [ ] implement assembly sections  
