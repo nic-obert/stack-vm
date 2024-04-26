@@ -15,7 +15,7 @@ pub type ByteCode<'a> = &'a [u8];
 
 
 /// HiVM instructions. Each instruction is represented by one byte.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum ByteCodes {
 

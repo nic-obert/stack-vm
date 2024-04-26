@@ -10,7 +10,6 @@ clap = { version = "4.5.4", features = ["derive"] }
 colored = "2.1.0"
 hivmlib = { path = "../hivmlib" }
 lazy_static = "1.4.0"
-open_linked_list = "0.1.0"
 regex = "1.10.4"
 static_assertions = "1.1.0"
 

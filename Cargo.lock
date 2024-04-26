@@ -67,7 +67,6 @@ dependencies = [
  "colored",
  "hivmlib",
  "lazy_static",
- "open_linked_list",
  "regex",
  "static_assertions",
 ]
@@ -161,12 +160,6 @@ name = "memchr"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
-
-[[package]]
-name = "open_linked_list"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ba4e579bb885482ebeb4482b3eea3f44adc52412f1cfb13f5364e12b5408315"
 
 [[package]]
 name = "proc-macro2"
