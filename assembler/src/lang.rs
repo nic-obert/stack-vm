@@ -14,6 +14,26 @@ pub enum Number {
     Float(f64)    
 }
 
+impl Number {
+
+    pub fn as_le_bytes(&self) -> Vec<u8> {
+        match self {
+            Number::Uint(value) => value.to_le_bytes().to_vec(),
+            Number::Int(value) => value.to_le_bytes().to_vec(),
+            Number::Float(value) => value.to_le_bytes().to_vec()
+        }
+    }
+
+
+    pub fn as_uint(&self) -> Option<u64> {
+        match self {
+            Number::Uint(value) => Some(*value),
+            _ => None
+        }
+    }
+
+}
+
 
 #[derive(Debug)]
 pub enum NumberLike {
@@ -64,7 +84,7 @@ pub enum AsmInstruction {
     LoadStatic2 { addr: AddressLike },
     LoadStatic4 { addr: AddressLike },
     LoadStatic8 { addr: AddressLike },
-    LoadStaticBytes { addr: AddressLike },
+    LoadStaticBytes { addr: AddressLike, count: NumberLike },
 
     LoadConst1 { value: NumberLike },
     LoadConst2 { value: NumberLike },
@@ -189,5 +209,16 @@ pub enum AsmValue {
     CurrentPosition,
     StringLiteral(StaticID),
     Symbol(SymbolID),
+}
+
+impl AsmValue {
+
+    pub fn as_uint(&self) -> Option<u64> {
+        match self {
+            AsmValue::Const(n) => n.as_uint(),
+            _ => None
+        }
+    }
+
 }
 

@@ -58,8 +58,7 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
                     errors::parsing_error(&next_token.source, source, "Expected a symbol name after `%`.")
                 };
 
-                let symbol_value = symbol_table.get_symbol(symbol_id).unwrap_or_else(
-                    || errors::parsing_error(&next_token.source, source, "Use of undefined or undeclared symbol."))
+                let symbol_value = symbol_table.get_symbol(symbol_id)
                     .borrow()
                     .value
                     .clone()
@@ -125,7 +124,7 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                     errors::parsing_error(&main_operator.source, source, "Expected a symbol as label name.");
                 };
 
-                let symbol = symbol_table.get_symbol(symbol_id).unwrap().borrow();
+                let symbol = symbol_table.get_symbol(symbol_id).borrow();
 
                 // Disallow defining a label more than once.
                 if symbol.value.is_some() {
@@ -234,11 +233,41 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                     ByteCodes::LoadStatic2 => one_arg_address_instruction!(LoadStatic2),
                     ByteCodes::LoadStatic4 => one_arg_address_instruction!(LoadStatic4),
                     ByteCodes::LoadStatic8 => one_arg_address_instruction!(LoadStatic8),
-                    ByteCodes::LoadStaticBytes => one_arg_address_instruction!(LoadStaticBytes),
+
+                    ByteCodes::LoadStaticBytes => {
+                        if operands.len() != 2 {
+                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly two arguments.");
+                        }
+
+                        let addr = match &operands[0] {
+                            AsmValue::Const(n) => AddressLike::Number(n.clone()),
+                            AsmValue::CurrentPosition => AddressLike::CurrentPosition,
+                            AsmValue::Symbol(id) => AddressLike::Symbol(*id),
+                           
+                            AsmValue::StringLiteral(_)
+                                => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
+                        };
+
+                        let count = match &operands[1] {
+                            AsmValue::Const(n) => NumberLike::Number(n.clone()),
+                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+                           
+                            AsmValue::StringLiteral(_)
+                                => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
+                        };
+
+                        nodes.push(AsmNode {
+                            value: AsmNodeValue::Instruction(AsmInstruction::LoadStaticBytes { addr, count }),
+                            source: main_operator.source.clone()
+                        });
+                    },
+
                     ByteCodes::LoadConst1 => one_arg_numeric_instruction!(LoadConst1),
                     ByteCodes::LoadConst2 => one_arg_numeric_instruction!(LoadConst2),
                     ByteCodes::LoadConst4 => one_arg_numeric_instruction!(LoadConst4),
                     ByteCodes::LoadConst8 => one_arg_numeric_instruction!(LoadConst8),
+
                     ByteCodes::LoadConstBytes => {
                         let mut bytes = Vec::with_capacity(operands.len());
 
@@ -260,6 +289,7 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                             source: main_operator.source.clone()
                         });
                     },
+
                     ByteCodes::Load1 => no_args_instruction!(Load1),
                     ByteCodes::Load2 => no_args_instruction!(Load2),
                     ByteCodes::Load4 => no_args_instruction!(Load4),
@@ -341,7 +371,7 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                     errors::parsing_error(&main_operator.source, source, "Expected a symbol as section name.");
                 };
 
-                let symbol = symbol_table.get_symbol(symbol_id).unwrap().borrow();
+                let symbol = symbol_table.get_symbol(symbol_id).borrow();
 
                 if symbol.value.is_some() {
                     errors::symbol_redeclaration(&main_operator.source, source, &symbol);

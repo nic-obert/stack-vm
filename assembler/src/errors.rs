@@ -85,3 +85,23 @@ pub fn outside_section(token: &SourceToken, source: SourceCode, message: &str) -
 
     std::process::exit(1);
 }
+
+
+pub fn invalid_argument(token: &SourceToken, source: SourceCode, message: &str) -> ! {
+    eprintln!("Assembly unit \"{}\"", token.unit_path.display());
+    eprintln!("Invalid argument at {}:{}: {}", token.line_number(), token.column, message);
+
+    print_source_context(source, token.line_index, token.column);
+
+    std::process::exit(1);
+}
+
+
+pub fn undefined_symbol(token: &SourceToken, source: SourceCode, symbol_name: &str) -> ! {
+    eprintln!("Assembly unit \"{}\"", token.unit_path.display());
+    eprintln!("Undefined symbol at {}:{}: `{}`", token.line_number(), token.column, symbol_name);
+
+    print_source_context(source, token.line_index, token.column);
+
+    std::process::exit(1);
+}

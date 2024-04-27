@@ -8,6 +8,14 @@ pub type Address = usize;
 #[derive(Default)]
 pub struct VirtualAddress(pub Address);
 
+impl VirtualAddress {
+
+    pub fn to_le_bytes(self) -> [u8; mem::size_of::<Address>()] {
+        self.0.to_le_bytes()
+    }
+
+}
+
 const_assert_eq!(mem::size_of::<VirtualAddress>(), mem::size_of::<usize>());
 
 

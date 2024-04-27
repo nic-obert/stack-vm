@@ -106,8 +106,11 @@ impl<'a> SymbolTable<'a> {
     }
 
 
-    pub fn get_symbol(&self, id: SymbolID) -> Option<&RefCell<Symbol<'a>>> {
-        self.symbols.get(id.0)
+    /// Returns the symbol with the given id.
+    /// Assumes the symbol exists in the symbol table and is reachable.
+    /// Since the symbol id was issued by the symbol table itself, there shouldn0t be unmatched symbol ids.
+    pub fn get_symbol(&self, id: SymbolID) -> &RefCell<Symbol<'a>> {
+        &self.symbols[id.0]
     }
 
     // pub fn get_symbol_value(&self, name: &str) -> Option<AsmValue<'a>> {
