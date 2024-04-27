@@ -3,7 +3,7 @@ use std::cmp::min;
 
 use colored::Colorize;
 
-use crate::tokenizer::{SourceToken, SourceCode};
+use crate::{symbol_table::Symbol, tokenizer::{SourceCode, SourceToken}};
 
 
 pub fn print_source_context(source: SourceCode, line_index: usize, char_pointer: usize) {
@@ -52,15 +52,15 @@ pub fn invalid_escape_sequence(token: &SourceToken, character: char, char_index:
 }
 
 
-pub fn symbol_redeclaration(token: &SourceToken, source: SourceCode, old_declaration: &SourceToken) -> ! {
+pub fn symbol_redeclaration(token: &SourceToken, source: SourceCode, old_declaration: &Symbol) -> ! {
     eprintln!("Assembly unit \"{}\"", token.unit_path.display());
-    eprintln!("Symbol redeclaration at {}:{}: `{}`", token.line_number(), token.column, token.string);
+    eprintln!("Symbol redeclaration at {}:{}: `{}`", token.line_number(), token.column, old_declaration.name);
     
     print_source_context(source, token.line_index, token.column);
     
-    eprintln!("\nPrevious declaration at {}:{}: `{}`", old_declaration.line_number(), old_declaration.column, old_declaration.string);
+    eprintln!("\nPrevious declaration at {}:{}: `{}`", old_declaration.source.line_number(), old_declaration.source.column, old_declaration.name);
 
-    print_source_context(source, old_declaration.line_index, old_declaration.column);
+    print_source_context(source, old_declaration.source.line_index, old_declaration.source.column);
     
     std::process::exit(1);
 

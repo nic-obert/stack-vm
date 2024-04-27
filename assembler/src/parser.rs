@@ -125,11 +125,17 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                     errors::parsing_error(&main_operator.source, source, "Expected a symbol as label name.");
                 };
 
-                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id));
+                let symbol = symbol_table.get_symbol(symbol_id).unwrap().borrow();
 
-                let label_name = symbol_table.get_symbol(symbol_id).unwrap().borrow().source.string;
+                // Disallow defining a label more than once.
+                if symbol.value.is_some() {
+                    errors::symbol_redeclaration(&main_operator.source, source, &symbol);
+                }
 
-                nodes.push(AsmNode::Label(label_name));
+                nodes.push(AsmNode::Label(symbol.source.string));
+                
+                // Mark the label as declared at this location in the source code. No further declarations of the same label are allowed.
+                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), main_operator.source.clone());
             },
 
             TokenValue::Instruction(code) => {
@@ -317,11 +323,16 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                     errors::parsing_error(&main_operator.source, source, "Expected a symbol as section name.");
                 };
 
-                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id));
+                let symbol = symbol_table.get_symbol(symbol_id).unwrap().borrow();
 
-                let section_name = symbol_table.get_symbol(symbol_id).unwrap().borrow().source.string;
-
-                nodes.push(AsmNode::Section(AsmSection::from_name(section_name)));                
+                if symbol.value.is_some() {
+                    errors::symbol_redeclaration(&main_operator.source, source, &symbol);
+                }
+                
+                nodes.push(AsmNode::Section(AsmSection::from_name(symbol.source.string)));                
+                
+                // Mark this section name as declared at this source code location.
+                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), main_operator.source.clone());
             },
             
             TokenValue::Number(_) |

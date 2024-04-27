@@ -10,6 +10,7 @@ use crate::tokenizer::SourceToken;
 pub struct Symbol<'a> {
 
     pub source: Rc<SourceToken<'a>>,
+    pub name: &'a str,
     pub value: Option<AsmValue>,
 
 }
@@ -78,8 +79,10 @@ impl<'a> SymbolTable<'a> {
     }
 
 
-    pub fn define_symbol(&self, id: SymbolID, value: AsmValue) {
-        self.symbols[id.0].borrow_mut().value = Some(value);
+    pub fn define_symbol(&self, id: SymbolID, value: AsmValue, definition_source: Rc<SourceToken<'a>>) {
+        let mut symbol = self.symbols[id.0].borrow_mut();
+        symbol.value = Some(value);
+        symbol.source = definition_source;
     }
 
 
@@ -89,7 +92,7 @@ impl<'a> SymbolTable<'a> {
         let scope = self.scopes.last_mut().unwrap();
 
         let symbol_id = SymbolID(self.symbols.len());
-        if let Some(old_symbol) = scope.symbols.insert(name, symbol_id.clone()) {
+        if let Some(old_symbol) = scope.symbols.insert(name, symbol_id) {
             return Err(&self.symbols[old_symbol.0]);
         }
 

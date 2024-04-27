@@ -20,6 +20,16 @@ pub fn generate(asm: &[AsmNode], symbol_table: &SymbolTable, source: SourceCode)
 
     let mut label_map: HashMap<&str, VirtualAddress> = HashMap::new();
 
+    for node in asm {
+
+        match node {
+            AsmNode::Instruction(_) => todo!(),
+            AsmNode::Label(name) => label_map.insert(name, VirtualAddress(bytecode.len())),
+            AsmNode::Section(_) => todo!(),
+        };
+
+    }
+
     bytecode.shrink_to_fit();
     bytecode
 }

@@ -305,9 +305,9 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
                         if let Some(symbol_id) = symbol_table.get_symbol_id(string) {
                             TokenValue::Identifier(symbol_id)
                         } else {
-                            let symbol_id = match symbol_table.declare_symbol(string, Symbol { source: token_rc.clone(), value: None}) {
+                            let symbol_id = match symbol_table.declare_symbol(string, Symbol { source: token_rc.clone(), value: None, name: string }) {
                                 Ok(id) => id,
-                                Err(old_symbol) => errors::symbol_redeclaration(token, source, &old_symbol.borrow().source)
+                                Err(old_symbol) => errors::symbol_redeclaration(token, source, &old_symbol.borrow())
                             };
     
                             TokenValue::Identifier(symbol_id)
