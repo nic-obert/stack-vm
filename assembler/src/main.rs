@@ -8,6 +8,7 @@ mod tokenizer;
 mod symbol_table;
 mod parser;
 mod lang;
+mod code_generator;
 
 use clap::Parser;
 use cli_parser::CliParser;

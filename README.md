@@ -10,7 +10,7 @@
     - [Program space](#program-space)
   - [License](#license)
 
-This is a high level stack-based virtual machine that is designed to be simple and easy to understand. It works on a reduced instruction set, compared to regular processors (like x86 which has roughly 80 instructions).
+This is a high level 64-bit stack-based virtual machine that is designed to be simple and easy to understand. It works on a size-comprehensive instruction set, compared to register-based processors (like x86) and allows more granular control of sized operations.
 
 HiVM is a project intended to be a learning journey into virtual machines and compiler design. It is not intended to be used in production environments.
 

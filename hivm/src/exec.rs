@@ -180,7 +180,7 @@ struct Program<'a> {
 
     code: ByteCode<'a>,
     // Index of the next instruction/byte in the code.
-    program_counter: usize,
+    program_counter: VirtualAddress,
 
 }
 
@@ -193,56 +193,61 @@ impl<'a> Program<'a> {
         }
 
         Self {
-            program_counter: unsafe { read_address(code.as_ptr()) },
+            program_counter: VirtualAddress(0),
             code,
         }
     }
 
 
-    pub fn fetch_instruction(&mut self) -> ByteCodes {
-        let instruction = ByteCodes::from(self.code[self.program_counter]);
-        self.program_counter += 1;
-        instruction
+    pub fn jump_to(&mut self, target: VirtualAddress) {
+        self.program_counter = target;
+    }
+
+
+    pub fn fetch_instruction(&mut self) -> Option<ByteCodes> {
+        let instruction = ByteCodes::from(*self.code.get(self.program_counter.0)?);
+        self.program_counter.0 += 1;
+        Some(instruction)
     }
 
 
     pub fn fetch_1(&mut self) -> u8 {
-        let byte = self.code[self.program_counter];
-        self.program_counter += mem::size_of::<u8>();
+        let byte = self.code[self.program_counter.0];
+        self.program_counter.0 += 1;
         byte
     }
 
 
     pub fn fetch_2(&mut self) -> u16 {
         let value = unsafe {
-            *(self.code.as_ptr() as *const u16)
+            *((self.code.as_ptr().add(self.program_counter.0)) as *const u16)
         };
-        self.program_counter += mem::size_of::<u16>();
+        self.program_counter.0 += 2;
         value
     }
 
 
     pub fn fetch_4(&mut self) -> u32 {
         let value = unsafe {
-            *(self.code.as_ptr() as *const u32)
+            *(self.code.as_ptr().add(self.program_counter.0) as *const u32)
         };
-        self.program_counter += mem::size_of::<u32>();
+        self.program_counter.0 += 4;
         value
     }
 
 
     pub fn fetch_8(&mut self) -> u64 {
         let value = unsafe {
-            *(self.code.as_ptr() as *const u64)
+            *(self.code.as_ptr().add(self.program_counter.0) as *const u64)
         };
-        self.program_counter += mem::size_of::<u64>();
+        self.program_counter.0 += 8;
         value
     }
 
 
     pub fn fetch_bytes(&mut self, count: usize) -> &[u8] {
-        let bytes = &self.code[self.program_counter..self.program_counter + count];
-        self.program_counter += count;
+        let bytes = &self.code[self.program_counter.0..self.program_counter.0 + count];
+        self.program_counter.0 += count;
         bytes
     }
 
@@ -315,9 +320,7 @@ impl VM {
 
         let mut program = Program::new(code);
 
-        loop {
-
-            let instruction = program.fetch_instruction();
+        while let Some(instruction) = program.fetch_instruction() {
 
             // This match statement will be implemented through an efficient jump table by the compiler. 
             // There's no need to implement a jump table manually.
@@ -699,12 +702,154 @@ impl VM {
                     let count = self.opstack.pop_8() as usize;
                     let bytes = unsafe { std::slice::from_raw_parts(self.opstack.tos(), count) };
                     self.opstack.push_bytes(bytes);
-                }
+                },
+
+                ByteCodes::JumpConst => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    program.jump_to(target);
+                },
+
+                ByteCodes::Jump => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    program.jump_to(target);
+                },
+
+                ByteCodes::JumpNotZeroConst1 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_1();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNotZeroConst2 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_2();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNotZeroConst4 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_4();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNotZeroConst8 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_8();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNotZero1 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_1();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNotZero2 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_2();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNotZero4 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_4();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNotZero8 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_8();
+                    if condition != 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZeroConst1 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_1();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZeroConst2 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_2();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZeroConst4 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_4();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZeroConst8 => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    let condition = self.opstack.pop_8();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZero1 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_1();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZero2 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_2();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZero4 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_4();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpZero8 => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    let condition = self.opstack.pop_8();
+                    if condition == 0 {
+                        program.jump_to(target);
+                    }
+                },
 
                 ByteCodes::Nop => { /* Do nothing */ },
 
             }
         }
+
+        // The program has no more instruction to execute and an exit code was not provided.
+        // Assume the program ended successfully.
+        0
     }
 
 

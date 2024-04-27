@@ -89,7 +89,7 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
 }
 
 
-pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_table: &'a mut SymbolTable<'a>) -> Vec<AsmNode<'a>> {
+pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_table: &'a SymbolTable<'a>) -> Vec<AsmNode<'a>> {
 
     // A good estimate for the number of nodes is the number of assembly lines. This is because an assembly line 
     // usually translates to a single instruction. This should avoid reallocations in most cases.
@@ -282,6 +282,24 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                         nodes.push(AsmNode::Instruction(AsmInstruction::IntrConst { code: val }));
                     },
                     ByteCodes::Exit => no_args_instruction!(Exit),
+                    ByteCodes::JumpConst => one_arg_address_instruction!(JumpConst),
+                    ByteCodes::Jump => no_args_instruction!(Jump),
+                    ByteCodes::JumpNotZeroConst1 => one_arg_address_instruction!(JumpNotZeroConst1),
+                    ByteCodes::JumpNotZeroConst2 => one_arg_address_instruction!(JumpNotZeroConst2),
+                    ByteCodes::JumpNotZeroConst4 => one_arg_address_instruction!(JumpNotZeroConst4),
+                    ByteCodes::JumpNotZeroConst8 => one_arg_address_instruction!(JumpNotZeroConst8),
+                    ByteCodes::JumpNotZero1 => no_args_instruction!(JumpNotZero1),
+                    ByteCodes::JumpNotZero2 => no_args_instruction!(JumpNotZero2),
+                    ByteCodes::JumpNotZero4 => no_args_instruction!(JumpNotZero4),
+                    ByteCodes::JumpNotZero8 => no_args_instruction!(JumpNotZero8),
+                    ByteCodes::JumpZeroConst1 => one_arg_address_instruction!(JumpZeroConst1),
+                    ByteCodes::JumpZeroConst2 => one_arg_address_instruction!(JumpZeroConst2),
+                    ByteCodes::JumpZeroConst4 => one_arg_address_instruction!(JumpZeroConst4),
+                    ByteCodes::JumpZeroConst8 => one_arg_address_instruction!(JumpZeroConst8),
+                    ByteCodes::JumpZero1 => no_args_instruction!(JumpZero1),
+                    ByteCodes::JumpZero2 => no_args_instruction!(JumpZero2),
+                    ByteCodes::JumpZero4 => no_args_instruction!(JumpZero4),
+                    ByteCodes::JumpZero8 => no_args_instruction!(JumpZero8),
                     ByteCodes::Nop => no_args_instruction!(Nop),
                 }
             },

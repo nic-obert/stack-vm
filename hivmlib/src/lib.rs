@@ -99,6 +99,26 @@ pub enum ByteCodes {
 
     Exit,
 
+    JumpConst,
+    Jump,
+
+    JumpNotZeroConst1,
+    JumpNotZeroConst2,
+    JumpNotZeroConst4,
+    JumpNotZeroConst8,
+    JumpNotZero1,
+    JumpNotZero2,
+    JumpNotZero4,
+    JumpNotZero8,
+    JumpZeroConst1,
+    JumpZeroConst2,
+    JumpZeroConst4,
+    JumpZeroConst8,
+    JumpZero1,
+    JumpZero2,
+    JumpZero4,
+    JumpZero8,
+
     /// No operation. Do nothing for this cycle.
     Nop
 
@@ -179,6 +199,24 @@ impl ByteCodes {
             "free" => Some(Self::Free),
             "intr" => Some(Self::Intr),
             "exit" => Some(Self::Exit),
+            "jumpconst" => Some(Self::JumpConst),
+            "jump" => Some(Self::Jump),
+            "jumpnzconst1" => Some(Self::JumpNotZeroConst1),
+            "jumpnzconst2" => Some(Self::JumpNotZeroConst2),
+            "jumpnzconst4" => Some(Self::JumpNotZeroConst4),
+            "jumpnzconst8" => Some(Self::JumpNotZeroConst8),
+            "jumpnz1" => Some(Self::JumpNotZero1),
+            "jumpnz2" => Some(Self::JumpNotZero2),
+            "jumpnz4" => Some(Self::JumpNotZero4),
+            "jumpnz8" => Some(Self::JumpNotZero8),
+            "jumpzconst1" => Some(Self::JumpZeroConst1),
+            "jumpzconst2" => Some(Self::JumpZeroConst2),
+            "jumpzconst4" => Some(Self::JumpZeroConst4),
+            "jumpzconst8" => Some(Self::JumpZeroConst8),
+            "jumpz1" => Some(Self::JumpZero1),
+            "jumpz2" => Some(Self::JumpZero2),
+            "jumpz4" => Some(Self::JumpZero4),
+            "jumpz8" => Some(Self::JumpZero8),
             "nop" => Some(Self::Nop),
             
             _ => None

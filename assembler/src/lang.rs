@@ -108,6 +108,25 @@ pub enum AsmInstruction {
 
     Exit,
 
+    JumpConst { addr: AddressLike },
+    Jump,
+    JumpNotZeroConst1 { addr: AddressLike },
+    JumpNotZeroConst2 { addr: AddressLike },
+    JumpNotZeroConst4 { addr: AddressLike },
+    JumpNotZeroConst8 { addr: AddressLike },
+    JumpNotZero1,
+    JumpNotZero2,
+    JumpNotZero4,
+    JumpNotZero8,
+    JumpZeroConst1 { addr: AddressLike },
+    JumpZeroConst2 { addr: AddressLike },
+    JumpZeroConst4 { addr: AddressLike },
+    JumpZeroConst8 { addr: AddressLike },
+    JumpZero1,
+    JumpZero2,
+    JumpZero4,
+    JumpZero8,
+
     Nop
 
 }
