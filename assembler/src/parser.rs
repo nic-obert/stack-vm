@@ -2,7 +2,7 @@ use hivmlib::ByteCodes;
 
 use crate::tokenizer::{SourceCode, Token, TokenList, TokenValue};
 use crate::symbol_table::SymbolTable;
-use crate::lang::{AsmInstruction, AsmNode, AsmSection, AsmValue, Number, NumberLike, AddressLike};
+use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmSection, AsmValue, Number, NumberLike};
 use crate::errors;
 
 
@@ -89,7 +89,7 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
 }
 
 
-pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_table: &'a SymbolTable<'a>) -> Vec<AsmNode<'a>> {
+pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_table: &'a SymbolTable<'a>) -> Vec<AsmNode<'a>> {
 
     // A good estimate for the number of nodes is the number of assembly lines. This is because an assembly line 
     // usually translates to a single instruction. This should avoid reallocations in most cases.
@@ -104,7 +104,7 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
         };
     }
 
-    while let Some(line) = &token_lines.get(i) {
+    while let Some(line) = token_lines.get(i) {
 
         // Assume the line is not empty since the lexer has already filtered out empty lines
 
@@ -132,7 +132,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                     errors::symbol_redeclaration(&main_operator.source, source, &symbol);
                 }
 
-                nodes.push(AsmNode::Label(symbol.source.string));
+                nodes.push(AsmNode { 
+                    value: AsmNodeValue::Label(symbol.source.string),
+                    source: main_operator.source.clone()
+                });
                 
                 // Mark the label as declared at this location in the source code. No further declarations of the same label are allowed.
                 symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), main_operator.source.clone());
@@ -145,7 +148,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                         if !operands.is_empty() {
                             errors::parsing_error(&main_operator.source, source, "Operator expects no arguments.");
                         }
-                        nodes.push(AsmNode::Instruction(AsmInstruction::$name));
+                        nodes.push(AsmNode { 
+                            value: AsmNodeValue::Instruction(AsmInstruction::$name),
+                            source: main_operator.source.clone()
+                        });
                     }}
                 }
 
@@ -164,7 +170,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                                 => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
                         };
 
-                        nodes.push(AsmNode::Instruction(AsmInstruction::$name { value: val }));
+                        nodes.push(AsmNode { 
+                            value: AsmNodeValue::Instruction(AsmInstruction::$name { value: val }),
+                            source: main_operator.source.clone()
+                        });
                     }}
                 }
 
@@ -183,7 +192,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                                 => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
                         };
 
-                        nodes.push(AsmNode::Instruction(AsmInstruction::$name { addr: val }));
+                        nodes.push(AsmNode {
+                            value: AsmNodeValue::Instruction(AsmInstruction::$name { addr: val }),
+                            source: main_operator.source.clone()
+                        });
                     }}
                 }
 
@@ -243,7 +255,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                             bytes.push(val);
                         }
 
-                        nodes.push(AsmNode::Instruction(AsmInstruction::LoadConstBytes { bytes }));
+                        nodes.push(AsmNode {
+                            value: AsmNodeValue::Instruction(AsmInstruction::LoadConstBytes { bytes }),
+                            source: main_operator.source.clone()
+                        });
                     },
                     ByteCodes::Load1 => no_args_instruction!(Load1),
                     ByteCodes::Load2 => no_args_instruction!(Load2),
@@ -285,7 +300,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                                 => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
                         };
 
-                        nodes.push(AsmNode::Instruction(AsmInstruction::IntrConst { code: val }));
+                        nodes.push(AsmNode {
+                            value: AsmNodeValue::Instruction(AsmInstruction::IntrConst { code: val }),
+                            source: main_operator.source.clone()
+                        });
                     },
                     ByteCodes::Exit => no_args_instruction!(Exit),
                     ByteCodes::JumpConst => one_arg_address_instruction!(JumpConst),
@@ -329,7 +347,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                     errors::symbol_redeclaration(&main_operator.source, source, &symbol);
                 }
                 
-                nodes.push(AsmNode::Section(AsmSection::from_name(symbol.source.string)));                
+                nodes.push(AsmNode {
+                    value: AsmNodeValue::Section(AsmSection::from_name(symbol.source.string)),
+                    source: main_operator.source.clone()
+                });
                 
                 // Mark this section name as declared at this source code location.
                 symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), main_operator.source.clone());

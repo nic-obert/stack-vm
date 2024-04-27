@@ -76,3 +76,12 @@ pub fn parsing_error(token: &SourceToken, source: SourceCode, message: &str) -> 
     std::process::exit(1);
 }
 
+
+pub fn outside_section(token: &SourceToken, source: SourceCode, message: &str) -> ! {
+    eprintln!("Assembly unit \"{}\"", token.unit_path.display());
+    eprintln!("Item outside an assembly section section at {}:{}: {}", token.line_number(), token.column, message);
+
+    print_source_context(source, token.line_index, token.column);
+
+    std::process::exit(1);
+}

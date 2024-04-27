@@ -69,14 +69,14 @@ impl<'a> SymbolTable<'a> {
     }
 
     
-    pub fn push_scope(&mut self) {
-        self.scopes.push(Scope::new());
-    }
+    // pub fn push_scope(&mut self) {
+    //     self.scopes.push(Scope::new());
+    // }
 
 
-    pub fn pop_scope(&mut self) {
-        self.scopes.pop();
-    }
+    // pub fn pop_scope(&mut self) {
+    //     self.scopes.pop();
+    // }
 
 
     pub fn define_symbol(&self, id: SymbolID, value: AsmValue, definition_source: Rc<SourceToken<'a>>) {

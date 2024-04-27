@@ -1,10 +1,10 @@
-use std::mem;
+use std::{mem, rc::Rc};
 
 use static_assertions::const_assert_eq;
 
 use hivmlib::ByteCodes;
 
-use crate::symbol_table::{StaticID, SymbolID};
+use crate::{symbol_table::{StaticID, SymbolID}, tokenizer::SourceToken};
 
 
 #[derive(Debug, Clone)]
@@ -151,11 +151,29 @@ impl<'a> AsmSection<'a> {
         }
     }
 
+
+    pub fn name(&self) -> &'a str {
+        match self {
+            AsmSection::Text => "text",
+            AsmSection::Data => "data",
+            AsmSection::Generic(name) => name
+        }
+    }
+
 }
 
 
 #[derive(Debug)]
-pub enum AsmNode<'a> {
+pub struct AsmNode<'a> {
+
+    pub value: AsmNodeValue<'a>,
+    pub source: Rc<SourceToken<'a>>
+
+}
+
+
+#[derive(Debug)]
+pub enum AsmNodeValue<'a> {
     Instruction(AsmInstruction),
     Label(&'a str),
     Section(AsmSection<'a>),
