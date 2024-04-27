@@ -299,14 +299,20 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
 
                     if let Some(instruction) = ByteCodes::from_string(string) {
                         TokenValue::Instruction(instruction)
+                        
                     } else if IDENTIFIER_REGEX.is_match(string) {
 
-                        let symbol_id = match symbol_table.declare_symbol(string, Symbol { source: token_rc.clone(), value: None}) {
-                            Ok(id) => id,
-                            Err(old_symbol) => errors::parsing_error(token, source, "Symbol already declared in the current scope.") // TODO: print the location of the previous declaration
-                        };
-
-                        TokenValue::Identifier(symbol_id)
+                        if let Some(symbol_id) = symbol_table.get_symbol_id(string) {
+                            TokenValue::Identifier(symbol_id)
+                        } else {
+                            let symbol_id = match symbol_table.declare_symbol(string, Symbol { source: token_rc.clone(), value: None}) {
+                                Ok(id) => id,
+                                Err(old_symbol) => errors::symbol_redeclaration(token, source, &old_symbol.borrow().source)
+                            };
+    
+                            TokenValue::Identifier(symbol_id)
+                        }
+                        
                     } else {
                         errors::parsing_error(token, source, "Invalid token.")
                     }

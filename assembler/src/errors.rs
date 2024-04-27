@@ -52,6 +52,21 @@ pub fn invalid_escape_sequence(token: &SourceToken, character: char, char_index:
 }
 
 
+pub fn symbol_redeclaration(token: &SourceToken, source: SourceCode, old_declaration: &SourceToken) -> ! {
+    eprintln!("Assembly unit \"{}\"", token.unit_path.display());
+    eprintln!("Symbol redeclaration at {}:{}: `{}`", token.line_number(), token.column, token.string);
+    
+    print_source_context(source, token.line_index, token.column);
+    
+    eprintln!("\nPrevious declaration at {}:{}: `{}`", old_declaration.line_number(), old_declaration.column, old_declaration.string);
+
+    print_source_context(source, old_declaration.line_index, old_declaration.column);
+    
+    std::process::exit(1);
+
+}
+
+
 pub fn parsing_error(token: &SourceToken, source: SourceCode, message: &str) -> ! {
     eprintln!("Assembly unit \"{}\"", token.unit_path.display());
     eprintln!("Parsing error at {}:{} on token `{}`:\n{}", token.line_number(), token.column, token.string, message);
