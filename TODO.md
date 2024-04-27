@@ -6,9 +6,7 @@ Project Description
 
 ### Todo
 
-- [ ] refactor the project and divide tasks into different files  
 - [ ] write assembly documentation  
-- [ ] implement assembly sections  
 - [ ] implement macros  
 - [ ] implement a primitive assembly module system like #include in C  
 - [ ] implement in-place math in assembly for constants  
@@ -20,11 +18,13 @@ Project Description
 
 ### In Progress
 
+- [ ] implement assembly sections  
 - [ ] write an assembler. advanced parsing would be nice to have. a tokenizer is thus required instead of a simple fixed argument table  
 - [ ] add interrupts. some interrupts are predefined, other interrupts cause to jump to a specific memory address and execute from there  
 
 ### Done ✓
 
+- [x] refactor the project and divide tasks into different files  
 - [x] Differentiate between variable stack and operation stack  
 - [x] update documentation with the new stack  
 - [x] add proxy allocator  

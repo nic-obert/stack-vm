@@ -3,7 +3,7 @@ use std::cmp::min;
 
 use colored::Colorize;
 
-use crate::assembler::{SourceToken, SourceCode};
+use crate::tokenizer::{SourceToken, SourceCode};
 
 
 pub fn print_source_context(source: SourceCode, line_index: usize, char_pointer: usize) {

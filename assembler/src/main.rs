@@ -4,6 +4,10 @@ mod cli_parser;
 mod files;
 mod assembler;
 mod errors;
+mod tokenizer;
+mod symbol_table;
+mod parser;
+mod lang;
 
 use clap::Parser;
 use cli_parser::CliParser;
