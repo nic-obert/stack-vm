@@ -125,7 +125,11 @@ fn lex<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> impl Iterator<Item = 
                 }
             }
 
-            Some(matches)
+            if matches.is_empty() {
+                None
+            } else {
+                Some(matches)
+            }
         }
     )
 }
@@ -323,7 +327,7 @@ fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &mut 
 
             current_line.push(Token {
                 source: token_rc,
-                priority: token_value.base_priority() as TokenPriority, // TODO: implement increased priority inside delimiters
+                priority: token_value.base_priority() as TokenPriority,
                 value: token_value,
             });
 
@@ -440,7 +444,17 @@ impl<'a> SymbolTable<'a> {
 }
 
 
+#[derive(Debug)]
+enum NumberLike {
+    Number(Number),
+    Symbol(SymbolID),
+    CurrentPosition,
+}
+
+type AddressLike = NumberLike;
+
 /// Representation of assembly instructions and their operands
+#[derive(Debug)]
 enum AsmInstruction {
     
     AddInt1,
@@ -475,17 +489,17 @@ enum AsmInstruction {
     ModFloat4,
     ModFloat8,
 
-    LoadStatic1 { addr: VirtualAddress },
-    LoadStatic2 { addr: VirtualAddress },
-    LoadStatic4 { addr: VirtualAddress },
-    LoadStatic8 { addr: VirtualAddress },
-    LoadStaticBytes { addr: VirtualAddress },
+    LoadStatic1 { addr: AddressLike },
+    LoadStatic2 { addr: AddressLike },
+    LoadStatic4 { addr: AddressLike },
+    LoadStatic8 { addr: AddressLike },
+    LoadStaticBytes { addr: AddressLike },
 
-    LoadConst1 { value: u8 },
-    LoadConst2 { value: u16 },
-    LoadConst4 { value: u32 },
-    LoadConst8 { value: u64 },
-    LoadConstBytes { value: Vec<u8> }, // TODO: maybe this should be a slice?
+    LoadConst1 { value: NumberLike },
+    LoadConst2 { value: NumberLike },
+    LoadConst4 { value: NumberLike },
+    LoadConst8 { value: NumberLike },
+    LoadConstBytes { bytes: Vec<NumberLike> },
 
     Load1,
     Load2,
@@ -493,7 +507,7 @@ enum AsmInstruction {
     Load8,
     LoadBytes,
 
-    VirtualConstToReal { addr: VirtualAddress },
+    VirtualConstToReal { addr: AddressLike },
     VirtualToReal,
 
     Store1,
@@ -519,7 +533,7 @@ enum AsmInstruction {
     Free,
 
     Intr,
-    IntrConst { code: Interrupts },
+    IntrConst { code: NumberLike },
 
     Exit,
 
@@ -530,6 +544,7 @@ enum AsmInstruction {
 const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>());
 
 
+#[derive(Debug)]
 enum AsmSection<'a> {
     Text,
     Data,
@@ -549,6 +564,7 @@ impl<'a> AsmSection<'a> {
 }
 
 
+#[derive(Debug)]
 enum AsmNode<'a> {
     Instruction(AsmInstruction),
     Label(&'a str),
@@ -699,76 +715,156 @@ fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_table:
             },
 
             TokenValue::Instruction(code) => {
+
+                macro_rules! no_args_instruction {
+                    ($name:ident) => {{
+                        if !operands.is_empty() {
+                            errors::parsing_error(&main_operator.source, source, "Operator expects no arguments.");
+                        }
+                        nodes.push(AsmNode::Instruction(AsmInstruction::$name));
+                    }}
+                }
+
+                macro_rules! one_arg_numeric_instruction {
+                    ($name:ident) => {{
+                        if operands.len() != 1 {
+                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+                        }
+
+                        let val = match &operands[0] {
+                            AsmValue::Const(n) => NumberLike::Number(n.clone()),
+                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+                           
+                            AsmValue::StringLiteral(_)
+                                => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
+                        };
+
+                        nodes.push(AsmNode::Instruction(AsmInstruction::$name { value: val }));
+                    }}
+                }
+
+                macro_rules! one_arg_address_instruction {
+                    ($name:ident) => {{
+                        if operands.len() != 1 {
+                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+                        }
+
+                        let val = match &operands[0] {
+                            AsmValue::Const(n) => AddressLike::Number(n.clone()),
+                            AsmValue::CurrentPosition => AddressLike::CurrentPosition,
+                            AsmValue::Symbol(id) => AddressLike::Symbol(*id),
+                           
+                            AsmValue::StringLiteral(_)
+                                => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
+                        };
+
+                        nodes.push(AsmNode::Instruction(AsmInstruction::$name { addr: val }));
+                    }}
+                }
+
                 match code {
-                    ByteCodes::AddInt1 => todo!(),
-                    ByteCodes::AddInt2 => todo!(),
-                    ByteCodes::AddInt4 => todo!(),
-                    ByteCodes::AddInt8 => todo!(),
-                    ByteCodes::SubInt1 => todo!(),
-                    ByteCodes::SubInt2 => todo!(),
-                    ByteCodes::SubInt4 => todo!(),
-                    ByteCodes::SubInt8 => todo!(),
-                    ByteCodes::MulInt1 => todo!(),
-                    ByteCodes::MulInt2 => todo!(),
-                    ByteCodes::MulInt4 => todo!(),
-                    ByteCodes::MulInt8 => todo!(),
-                    ByteCodes::DivInt1 => todo!(),
-                    ByteCodes::DivInt2 => todo!(),
-                    ByteCodes::DivInt4 => todo!(),
-                    ByteCodes::DivInt8 => todo!(),
-                    ByteCodes::ModInt1 => todo!(),
-                    ByteCodes::ModInt2 => todo!(),
-                    ByteCodes::ModInt4 => todo!(),
-                    ByteCodes::ModInt8 => todo!(),
-                    ByteCodes::AddFloat4 => todo!(),
-                    ByteCodes::AddFloat8 => todo!(),
-                    ByteCodes::SubFloat4 => todo!(),
-                    ByteCodes::SubFloat8 => todo!(),
-                    ByteCodes::MulFloat4 => todo!(),
-                    ByteCodes::MulFloat8 => todo!(),
-                    ByteCodes::DivFloat4 => todo!(),
-                    ByteCodes::DivFloat8 => todo!(),
-                    ByteCodes::ModFloat4 => todo!(),
-                    ByteCodes::ModFloat8 => todo!(),
-                    ByteCodes::LoadStatic1 => todo!(),
-                    ByteCodes::LoadStatic2 => todo!(),
-                    ByteCodes::LoadStatic4 => todo!(),
-                    ByteCodes::LoadStatic8 => todo!(),
-                    ByteCodes::LoadStaticBytes => todo!(),
-                    ByteCodes::LoadConst1 => todo!(),
-                    ByteCodes::LoadConst2 => todo!(),
-                    ByteCodes::LoadConst4 => todo!(),
-                    ByteCodes::LoadConst8 => todo!(),
-                    ByteCodes::LoadConstBytes => todo!(),
-                    ByteCodes::Load1 => todo!(),
-                    ByteCodes::Load2 => todo!(),
-                    ByteCodes::Load4 => todo!(),
-                    ByteCodes::Load8 => todo!(),
-                    ByteCodes::LoadBytes => todo!(),
-                    ByteCodes::VirtualConstToReal => todo!(),
-                    ByteCodes::VirtualToReal => todo!(),
-                    ByteCodes::Store1 => todo!(),
-                    ByteCodes::Store2 => todo!(),
-                    ByteCodes::Store4 => todo!(),
-                    ByteCodes::Store8 => todo!(),
-                    ByteCodes::StoreBytes => todo!(),
-                    ByteCodes::Memmove1 => todo!(),
-                    ByteCodes::Memmove2 => todo!(),
-                    ByteCodes::Memmove4 => todo!(),
-                    ByteCodes::Memmove8 => todo!(),
-                    ByteCodes::MemmoveBytes => todo!(),
-                    ByteCodes::Duplicate1 => todo!(),
-                    ByteCodes::Duplicate2 => todo!(),
-                    ByteCodes::Duplicate4 => todo!(),
-                    ByteCodes::Duplicate8 => todo!(),
-                    ByteCodes::DuplicateBytes => todo!(),
-                    ByteCodes::Malloc => todo!(),
-                    ByteCodes::Realloc => todo!(),
-                    ByteCodes::Free => todo!(),
-                    ByteCodes::Intr => todo!(),
-                    ByteCodes::IntrConst => todo!(),
-                    ByteCodes::Exit => todo!(),
-                    ByteCodes::Nop => todo!(),
+                    ByteCodes::AddInt1 => no_args_instruction!(AddInt1),
+                    ByteCodes::AddInt2 => no_args_instruction!(AddInt2),
+                    ByteCodes::AddInt4 => no_args_instruction!(AddInt4),
+                    ByteCodes::AddInt8 => no_args_instruction!(AddInt8),
+                    ByteCodes::SubInt1 => no_args_instruction!(SubInt1),
+                    ByteCodes::SubInt2 => no_args_instruction!(SubInt2),
+                    ByteCodes::SubInt4 => no_args_instruction!(SubInt4),
+                    ByteCodes::SubInt8 => no_args_instruction!(SubInt8),
+                    ByteCodes::MulInt1 => no_args_instruction!(MulInt1),
+                    ByteCodes::MulInt2 => no_args_instruction!(MulInt2),
+                    ByteCodes::MulInt4 => no_args_instruction!(MulInt4),
+                    ByteCodes::MulInt8 => no_args_instruction!(MulInt8),
+                    ByteCodes::DivInt1 => no_args_instruction!(DivInt1),
+                    ByteCodes::DivInt2 => no_args_instruction!(DivInt2),
+                    ByteCodes::DivInt4 => no_args_instruction!(DivInt4),
+                    ByteCodes::DivInt8 => no_args_instruction!(DivInt8),
+                    ByteCodes::ModInt1 => no_args_instruction!(ModInt1),
+                    ByteCodes::ModInt2 => no_args_instruction!(ModInt2),
+                    ByteCodes::ModInt4 => no_args_instruction!(ModInt4),
+                    ByteCodes::ModInt8 => no_args_instruction!(ModInt8),
+                    ByteCodes::AddFloat4 => no_args_instruction!(AddFloat4),
+                    ByteCodes::AddFloat8 => no_args_instruction!(AddFloat8),
+                    ByteCodes::SubFloat4 => no_args_instruction!(SubFloat4),
+                    ByteCodes::SubFloat8 => no_args_instruction!(SubFloat8),
+                    ByteCodes::MulFloat4 => no_args_instruction!(MulFloat4),
+                    ByteCodes::MulFloat8 => no_args_instruction!(MulFloat8),
+                    ByteCodes::DivFloat4 => no_args_instruction!(DivFloat4),
+                    ByteCodes::DivFloat8 => no_args_instruction!(DivFloat8),
+                    ByteCodes::ModFloat4 => no_args_instruction!(ModFloat4),
+                    ByteCodes::ModFloat8 => no_args_instruction!(ModFloat8),
+                    ByteCodes::LoadStatic1 => one_arg_address_instruction!(LoadStatic1),
+                    ByteCodes::LoadStatic2 => one_arg_address_instruction!(LoadStatic2),
+                    ByteCodes::LoadStatic4 => one_arg_address_instruction!(LoadStatic4),
+                    ByteCodes::LoadStatic8 => one_arg_address_instruction!(LoadStatic8),
+                    ByteCodes::LoadStaticBytes => one_arg_address_instruction!(LoadStaticBytes),
+                    ByteCodes::LoadConst1 => one_arg_numeric_instruction!(LoadConst1),
+                    ByteCodes::LoadConst2 => one_arg_numeric_instruction!(LoadConst2),
+                    ByteCodes::LoadConst4 => one_arg_numeric_instruction!(LoadConst4),
+                    ByteCodes::LoadConst8 => one_arg_numeric_instruction!(LoadConst8),
+                    ByteCodes::LoadConstBytes => {
+                        let mut bytes = Vec::with_capacity(operands.len());
+
+                        for op in operands {
+                            let val = match op {
+                                AsmValue::Const(n) => NumberLike::Number(n),
+                                AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                                AsmValue::Symbol(id) => NumberLike::Symbol(id),
+
+                                AsmValue::StringLiteral(_)
+                                    => errors::parsing_error(&main_operator.source, source, "Expected a byte value, got a string literal."),
+                            };
+
+                            bytes.push(val);
+                        }
+
+                        nodes.push(AsmNode::Instruction(AsmInstruction::LoadConstBytes { bytes }));
+                    },
+                    ByteCodes::Load1 => no_args_instruction!(Load1),
+                    ByteCodes::Load2 => no_args_instruction!(Load2),
+                    ByteCodes::Load4 => no_args_instruction!(Load4),
+                    ByteCodes::Load8 => no_args_instruction!(Load8),
+                    ByteCodes::LoadBytes => no_args_instruction!(LoadBytes),
+                    ByteCodes::VirtualConstToReal => one_arg_address_instruction!(VirtualConstToReal),
+                    ByteCodes::VirtualToReal => no_args_instruction!(VirtualToReal),
+                    ByteCodes::Store1 => no_args_instruction!(Store1),
+                    ByteCodes::Store2 => no_args_instruction!(Store2),
+                    ByteCodes::Store4 => no_args_instruction!(Store4),
+                    ByteCodes::Store8 => no_args_instruction!(Store8),
+                    ByteCodes::StoreBytes => no_args_instruction!(StoreBytes),
+                    ByteCodes::Memmove1 => no_args_instruction!(Memmove1),
+                    ByteCodes::Memmove2 => no_args_instruction!(Memmove2),
+                    ByteCodes::Memmove4 => no_args_instruction!(Memmove4),
+                    ByteCodes::Memmove8 => no_args_instruction!(Memmove8),
+                    ByteCodes::MemmoveBytes => no_args_instruction!(MemmoveBytes),
+                    ByteCodes::Duplicate1 => no_args_instruction!(Duplicate1),
+                    ByteCodes::Duplicate2 => no_args_instruction!(Duplicate2),
+                    ByteCodes::Duplicate4 => no_args_instruction!(Duplicate4),
+                    ByteCodes::Duplicate8 => no_args_instruction!(Duplicate8),
+                    ByteCodes::DuplicateBytes => no_args_instruction!(DuplicateBytes),
+                    ByteCodes::Malloc => no_args_instruction!(Malloc),
+                    ByteCodes::Realloc => no_args_instruction!(Realloc),
+                    ByteCodes::Free => no_args_instruction!(Free),
+                    ByteCodes::Intr => no_args_instruction!(Intr),
+                    ByteCodes::IntrConst => {
+                        if operands.len() != 1 {
+                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+                        }
+
+                        let val = match &operands[0] {
+                            AsmValue::Const(n) => NumberLike::Number(n.clone()),
+                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+                           
+                            AsmValue::StringLiteral(_)
+                                => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
+                        };
+
+                        nodes.push(AsmNode::Instruction(AsmInstruction::IntrConst { code: val }));
+                    },
+                    ByteCodes::Exit => no_args_instruction!(Exit),
+                    ByteCodes::Nop => no_args_instruction!(Nop),
                 }
             },
 
@@ -821,14 +917,21 @@ pub fn assemble<'a>(raw_source: &'a str, unit_path: &'a Path) -> Vec<u8> {
 
     let token_lines = tokenize(&source_lines, unit_path, &mut symbol_table);
 
+    println!("\nTokens:\n");
     for line in &token_lines {
         for token in line.iter() {
             println!("{}", token);
         }
     }
 
-
     let asm = parse(&token_lines, &source_lines, &mut symbol_table);
+
+    println!("\n\nNodes:\n");
+    for node in &asm {
+        println!("{:?}", node);
+    }
+
+    // TODO: translate to bytecode and resolve symbols and types
 
     todo!()
 }
