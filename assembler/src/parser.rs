@@ -2,7 +2,7 @@ use hivmlib::ByteCodes;
 
 use crate::tokenizer::{SourceCode, Token, TokenList, TokenValue};
 use crate::symbol_table::SymbolTable;
-use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmSection, AsmValue, Number, NumberLike};
+use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmSection, AsmValue, Number, NumberLike};
 use crate::errors;
 
 
@@ -22,13 +22,13 @@ use crate::errors;
 // }
 
 
-fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, source: SourceCode) -> Vec<AsmValue> {
+fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, source: SourceCode) -> Vec<AsmOperand<'a>> {
     
     // TODO: implement in-line constant math and eventual in-line operators.
 
     // Allocate the maximum capacity needed for the operands. Since most operations will not contain
     // in-line operations, this will avoid reallocations and space won't be wasted for most cases.
-    let mut operands: Vec<AsmValue> = Vec::with_capacity(tokens.len());
+    let mut operands = Vec::with_capacity(tokens.len());
 
     // The parsing occurs on a left-to-right manner for now.
 
@@ -36,15 +36,21 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
 
     while let Some(token) = tokens.get(i) {
 
+        macro_rules! push_op {
+            ($op:expr, $source:expr) => {
+                operands.push(AsmOperand { value: $op, source: $source.source.clone() })
+            }
+        }
+
         match &token.value {
 
-            TokenValue::StringLiteral(s) => operands.push(AsmValue::StringLiteral(*s)),
-            TokenValue::CharLiteral(ch) => operands.push(AsmValue::Const(Number::Uint(*ch as u64))),
-            TokenValue::Number(n) => operands.push(AsmValue::Const(n.clone())),
+            TokenValue::StringLiteral(s) => push_op!(AsmValue::StringLiteral(*s), token),
+            TokenValue::CharLiteral(ch) => push_op!(AsmValue::Const(Number::Uint(*ch as u64)), token),
+            TokenValue::Number(n) => push_op!(AsmValue::Const(n.clone()), token),
 
-            TokenValue::Identifier(id) => operands.push(AsmValue::Symbol(*id)),
+            TokenValue::Identifier(id) => push_op!(AsmValue::Symbol(*id), token),
 
-            TokenValue::Dollar => operands.push(AsmValue::CurrentPosition),
+            TokenValue::Dollar => push_op!(AsmValue::CurrentPosition, token),
             
             TokenValue::Mod => {
                 i += 1;
@@ -65,7 +71,7 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
                     .unwrap_or_else(
                         || errors::parsing_error(&next_token.source, source, "Symbol has no value."));
 
-                operands.push(symbol_value);              
+                push_op!(symbol_value, token);              
             },
             
             TokenValue::Plus => todo!(),
@@ -88,7 +94,7 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
 }
 
 
-pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_table: &'a SymbolTable<'a>) -> Vec<AsmNode<'a>> {
+pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_table: &'a SymbolTable<'a>) -> Vec<AsmNode<'a>> {
 
     // A good estimate for the number of nodes is the number of assembly lines. This is because an assembly line 
     // usually translates to a single instruction. This should avoid reallocations in most cases.
@@ -118,17 +124,18 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                     errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
                 }
 
-                let symbol_id = if let AsmValue::Symbol(id) = operands[0] {
+                let op = &operands[0];
+                let symbol_id = if let AsmValue::Symbol(id) = op.value {
                     id
                 } else {
-                    errors::parsing_error(&main_operator.source, source, "Expected a symbol as label name.");
+                    errors::parsing_error(&op.source, source, "Expected a symbol as label name.");
                 };
 
                 let symbol = symbol_table.get_symbol(symbol_id).borrow();
 
                 // Disallow defining a label more than once.
                 if symbol.value.is_some() {
-                    errors::symbol_redeclaration(&main_operator.source, source, &symbol);
+                    errors::symbol_redeclaration(&op.source, source, &symbol);
                 }
 
                 nodes.push(AsmNode { 
@@ -137,7 +144,7 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                 });
                 
                 // Mark the label as declared at this location in the source code. No further declarations of the same label are allowed.
-                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), main_operator.source.clone());
+                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), op.source.clone());
             },
 
             TokenValue::Instruction(code) => {
@@ -160,17 +167,18 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                             errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
                         }
 
-                        let val = match &operands[0] {
+                        let op = &operands[0];
+                        let val = match &op.value {
                             AsmValue::Const(n) => NumberLike::Number(n.clone()),
                             AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                             AsmValue::Symbol(id) => NumberLike::Symbol(*id),
                            
                             AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
+                                => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
                         };
 
                         nodes.push(AsmNode { 
-                            value: AsmNodeValue::Instruction(AsmInstruction::$name { value: val }),
+                            value: AsmNodeValue::Instruction(AsmInstruction::$name { value: (val, op.source.clone()) }),
                             source: main_operator.source.clone()
                         });
                     }}
@@ -182,17 +190,18 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                             errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
                         }
 
-                        let val = match &operands[0] {
+                        let op = &operands[0];
+                        let val = match &op.value {
                             AsmValue::Const(n) => AddressLike::Number(n.clone()),
                             AsmValue::CurrentPosition => AddressLike::CurrentPosition,
                             AsmValue::Symbol(id) => AddressLike::Symbol(*id),
                            
                             AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
+                                => errors::parsing_error(&op.source, source, "Expected an address value, got a string literal."),
                         };
 
                         nodes.push(AsmNode {
-                            value: AsmNodeValue::Instruction(AsmInstruction::$name { addr: val }),
+                            value: AsmNodeValue::Instruction(AsmInstruction::$name { addr: (val, op.source.clone()) }),
                             source: main_operator.source.clone()
                         });
                     }}
@@ -239,7 +248,8 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                             errors::parsing_error(&main_operator.source, source, "Operator expects exactly two arguments.");
                         }
 
-                        let addr = match &operands[0] {
+                        let addr_op = &operands[0];
+                        let addr = match &addr_op.value {
                             AsmValue::Const(n) => AddressLike::Number(n.clone()),
                             AsmValue::CurrentPosition => AddressLike::CurrentPosition,
                             AsmValue::Symbol(id) => AddressLike::Symbol(*id),
@@ -248,17 +258,18 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                                 => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
                         };
 
-                        let count = match &operands[1] {
+                        let count_op = &operands[1];
+                        let count = match &count_op.value {
                             AsmValue::Const(n) => NumberLike::Number(n.clone()),
                             AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                             AsmValue::Symbol(id) => NumberLike::Symbol(*id),
                            
                             AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
+                                => errors::parsing_error(&count_op.source, source, "Expected a numeric value, got a string literal."),
                         };
 
                         nodes.push(AsmNode {
-                            value: AsmNodeValue::Instruction(AsmInstruction::LoadStaticBytes { addr, count }),
+                            value: AsmNodeValue::Instruction(AsmInstruction::LoadStaticBytes { addr: (addr, addr_op.source.clone()), count: (count, count_op.source.clone()) }),
                             source: main_operator.source.clone()
                         });
                     },
@@ -272,16 +283,16 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                         let mut bytes = Vec::with_capacity(operands.len());
 
                         for op in operands {
-                            let val = match op {
+                            let val = match op.value {
                                 AsmValue::Const(n) => NumberLike::Number(n),
                                 AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                                 AsmValue::Symbol(id) => NumberLike::Symbol(id),
 
                                 AsmValue::StringLiteral(_)
-                                    => errors::parsing_error(&main_operator.source, source, "Expected a byte value, got a string literal."),
+                                    => errors::parsing_error(&op.source, source, "Expected a byte value, got a string literal."),
                             };
 
-                            bytes.push(val);
+                            bytes.push((val, op.source.clone()));
                         }
 
                         nodes.push(AsmNode {
@@ -321,17 +332,18 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                             errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
                         }
 
-                        let val = match &operands[0] {
+                        let op = &operands[0];
+                        let val = match &op.value {
                             AsmValue::Const(n) => NumberLike::Number(n.clone()),
                             AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                             AsmValue::Symbol(id) => NumberLike::Symbol(*id),
                            
                             AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&main_operator.source, source, "Expected a numeric value, got a string literal."),
+                                => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
                         };
 
                         nodes.push(AsmNode {
-                            value: AsmNodeValue::Instruction(AsmInstruction::IntrConst { code: val }),
+                            value: AsmNodeValue::Instruction(AsmInstruction::IntrConst { code: (val, op.source.clone()) }),
                             source: main_operator.source.clone()
                         });
                     },
@@ -365,17 +377,18 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                     errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
                 }
 
-                let symbol_id = if let AsmValue::Symbol(id) = operands[0] {
+                let op = &operands[0];
+                let symbol_id = if let AsmValue::Symbol(id) = op.value {
                     id
                 } else {
-                    errors::parsing_error(&main_operator.source, source, "Expected a symbol as section name.");
+                    errors::parsing_error(&op.source, source, "Expected a symbol as section name.");
                 };
 
                 { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
                     let symbol = symbol_table.get_symbol(symbol_id).borrow();
 
                     if symbol.value.is_some() {
-                        errors::symbol_redeclaration(&main_operator.source, source, &symbol);
+                        errors::symbol_redeclaration(&op.source, source, &symbol);
                     }
                     
                     nodes.push(AsmNode {

@@ -21,7 +21,7 @@ pub fn assemble<'a>(raw_source: &'a str, unit_path: &'a Path) -> Vec<u8> {
         }
     }
 
-    let asm = parser::parse(token_lines, &source_lines, &symbol_table);
+    let asm = parser::parse(&token_lines, &source_lines, &symbol_table);
 
     println!("\n\nNodes:\n");
     for node in &asm {

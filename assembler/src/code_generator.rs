@@ -55,13 +55,13 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                 macro_rules! one_arg_address_instruction {
                     ($name:ident, $addr:ident) => {{
-                        let operand: VirtualAddress = match $addr {
+                        let operand: VirtualAddress = match $addr.0 {
 
                             AddressLike::Number(n) => {
                                 if let Some(n) = n.as_uint() {
                                     VirtualAddress(n as usize)
                                 } else {
-                                    errors::invalid_argument(&node.source, source, format!("Invalid address `{:?}`. Must be a positive integer.", n).as_str())
+                                    errors::invalid_argument(&$addr.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", n).as_str())
                                 }
                             },
 
@@ -72,7 +72,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                     || errors::undefined_symbol(&node.source, source, symbol.name))
                                     .as_uint()
                                     .unwrap_or_else(
-                                        || errors::invalid_argument(&node.source, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                        || errors::invalid_argument(&$addr.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                     );
 
                                 VirtualAddress(value as usize)
@@ -89,7 +89,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                 macro_rules! one_arg_number_instruction {
                     ($name:ident, $value:ident, $size:literal) => {{
 
-                        let bytes = match $value {
+                        let bytes = match $value.0 {
 
                             NumberLike::Number(n) => n.as_le_bytes(),
 
@@ -98,10 +98,10 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                                 symbol.value.as_ref()
                                     .unwrap_or_else(
-                                        || errors::undefined_symbol(&node.source, source, symbol_table.get_symbol(id).borrow().name)
+                                        || errors::undefined_symbol(&$value.1, source, symbol_table.get_symbol(id).borrow().name)
                                     ).as_uint()
                                     .unwrap_or_else(
-                                        || errors::invalid_argument(&node.source, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                        || errors::invalid_argument(&$value.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                     ).to_le_bytes().to_vec()
                             },
                             
@@ -109,7 +109,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                         };
 
                         if bytes.len() > $size {
-                            errors::invalid_argument(&node.source, source, format!("Invalid constant value. Must be a {} bytes.", $size).as_str());
+                            errors::invalid_argument(&$value.1, source, format!("Invalid constant value. Must be a {} bytes integer.", $size).as_str());
                         }
 
                         bytecode.push(ByteCodes::$name as u8);
@@ -157,13 +157,13 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                         one_arg_address_instruction!(LoadStaticBytes, addr);
                         
-                        let count = match count {
+                        let count = match count.0 {
                                 
                                 NumberLike::Number(n) => {
                                     if let Some(n) = n.as_uint() {
                                         n as usize
                                     } else {
-                                        errors::invalid_argument(&node.source, source, format!("Invalid count `{:?}`. Must be a positive integer.", n).as_str())
+                                        errors::invalid_argument(&count.1, source, format!("Invalid count `{:?}`. Must be a positive integer.", n).as_str())
                                     }
                                 },
     
@@ -172,10 +172,10 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                     
                                     symbol.value.as_ref()
                                         .unwrap_or_else(
-                                            || errors::undefined_symbol(&node.source, source, symbol.name)
+                                            || errors::undefined_symbol(&count.1, source, symbol.name)
                                         ).as_uint()
                                         .unwrap_or_else(
-                                            || errors::invalid_argument(&node.source, source, format!("Invalid count `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                            || errors::invalid_argument(&count.1, source, format!("Invalid count `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                         ) as usize
                                 },
     
@@ -196,11 +196,11 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                         
                         for byte in bytes {
 
-                            let bytes_per_byte = match byte {
+                            let bytes_per_byte = match byte.0 {
                                 
                                 NumberLike::Number(n) => {
                                     if matches!(n, Number::Float(_)) {
-                                        errors::invalid_argument(&node.source, source, "Invalid constant value. Must be an integer, not a float.")
+                                        errors::invalid_argument(&byte.1, source, "Invalid constant value. Must be an integer, not a float.")
                                     }
 
                                     n.as_le_bytes()
@@ -211,10 +211,10 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                                     symbol.value.as_ref()
                                         .unwrap_or_else(
-                                            || errors::undefined_symbol(&node.source, source, symbol_table.get_symbol(id).borrow().name)
+                                            || errors::undefined_symbol(&byte.1, source, symbol_table.get_symbol(id).borrow().name)
                                         ).as_uint()
                                         .unwrap_or_else(
-                                            || errors::invalid_argument(&node.source, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                            || errors::invalid_argument(&byte.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                         ).to_le_bytes().to_vec()
                                 },
 
@@ -222,7 +222,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             };
 
                             if bytes_per_byte.len() != 1 {
-                                errors::invalid_argument(&node.source, source, "Invalid constant value. Must be a single byte.")
+                                errors::invalid_argument(&byte.1, source, "Invalid constant value. Must be a single byte.")
                             }
 
                             value_bytes.push(bytes_per_byte[0]);

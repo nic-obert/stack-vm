@@ -46,7 +46,7 @@ pub type AddressLike = NumberLike;
 
 /// Representation of assembly instructions and their operands
 #[derive(Debug)]
-pub enum AsmInstruction {
+pub enum AsmInstruction<'a> {
     
     AddInt1,
     AddInt2,
@@ -80,17 +80,17 @@ pub enum AsmInstruction {
     ModFloat4,
     ModFloat8,
 
-    LoadStatic1 { addr: AddressLike },
-    LoadStatic2 { addr: AddressLike },
-    LoadStatic4 { addr: AddressLike },
-    LoadStatic8 { addr: AddressLike },
-    LoadStaticBytes { addr: AddressLike, count: NumberLike },
+    LoadStatic1 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    LoadStatic2 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    LoadStatic4 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    LoadStatic8 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    LoadStaticBytes { addr: (AddressLike, Rc<SourceToken<'a>>), count: (NumberLike, Rc<SourceToken<'a>>) },
 
-    LoadConst1 { value: NumberLike },
-    LoadConst2 { value: NumberLike },
-    LoadConst4 { value: NumberLike },
-    LoadConst8 { value: NumberLike },
-    LoadConstBytes { bytes: Vec<NumberLike> },
+    LoadConst1 { value: (NumberLike, Rc<SourceToken<'a>>) },
+    LoadConst2 { value: (NumberLike, Rc<SourceToken<'a>>) },
+    LoadConst4 { value: (NumberLike, Rc<SourceToken<'a>>) },
+    LoadConst8 { value: (NumberLike, Rc<SourceToken<'a>>) },
+    LoadConstBytes { bytes: Vec<(NumberLike, Rc<SourceToken<'a>>)> },
 
     Load1,
     Load2,
@@ -98,7 +98,7 @@ pub enum AsmInstruction {
     Load8,
     LoadBytes,
 
-    VirtualConstToReal { addr: AddressLike },
+    VirtualConstToReal { addr: (AddressLike, Rc<SourceToken<'a>>) },
     VirtualToReal,
 
     Store1,
@@ -124,24 +124,24 @@ pub enum AsmInstruction {
     Free,
 
     Intr,
-    IntrConst { code: NumberLike },
+    IntrConst { code: (NumberLike, Rc<SourceToken<'a>>) },
 
     Exit,
 
-    JumpConst { addr: AddressLike },
+    JumpConst { addr: (AddressLike, Rc<SourceToken<'a>>) },
     Jump,
-    JumpNotZeroConst1 { addr: AddressLike },
-    JumpNotZeroConst2 { addr: AddressLike },
-    JumpNotZeroConst4 { addr: AddressLike },
-    JumpNotZeroConst8 { addr: AddressLike },
+    JumpNotZeroConst1 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpNotZeroConst2 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpNotZeroConst4 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpNotZeroConst8 { addr: (AddressLike, Rc<SourceToken<'a>>) },
     JumpNotZero1,
     JumpNotZero2,
     JumpNotZero4,
     JumpNotZero8,
-    JumpZeroConst1 { addr: AddressLike },
-    JumpZeroConst2 { addr: AddressLike },
-    JumpZeroConst4 { addr: AddressLike },
-    JumpZeroConst8 { addr: AddressLike },
+    JumpZeroConst1 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpZeroConst2 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpZeroConst4 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpZeroConst8 { addr: (AddressLike, Rc<SourceToken<'a>>) },
     JumpZero1,
     JumpZero2,
     JumpZero4,
@@ -193,8 +193,17 @@ pub struct AsmNode<'a> {
 
 
 #[derive(Debug)]
+pub struct AsmOperand<'a> {
+
+    pub value: AsmValue,
+    pub source: Rc<SourceToken<'a>>
+
+}
+
+
+#[derive(Debug)]
 pub enum AsmNodeValue<'a> {
-    Instruction(AsmInstruction),
+    Instruction(AsmInstruction<'a>),
     Label(&'a str),
     Section(AsmSection<'a>),
     // MacroDef, TODO
