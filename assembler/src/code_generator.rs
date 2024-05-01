@@ -5,7 +5,7 @@ use crate::{lang::AsmNode, symbol_table::SymbolTable};
 use crate::lang::{AsmNodeValue, AsmSection, AsmInstruction, AddressLike, NumberLike, Number};
 use crate::tokenizer::SourceCode;
 
-use hivmlib::{ByteCodes, VirtualAddress};
+use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE};
 
 
 /// Generates byte code from the given assembly nodes.
@@ -89,31 +89,33 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                 macro_rules! one_arg_number_instruction {
                     ($name:ident, $value:ident, $size:literal) => {{
 
-                        let bytes = match $value.0 {
+                        let (bytes, minimum_size) = match $value.0 {
 
-                            NumberLike::Number(n) => n.as_le_bytes(),
+                            NumberLike::Number(n, size) => (n.as_le_bytes(), size as usize),
 
                             NumberLike::Symbol(id) => {
                                 let symbol = symbol_table.get_symbol(id).borrow();
 
-                                symbol.value.as_ref()
+                                (symbol.value.as_ref()
                                     .unwrap_or_else(
                                         || errors::undefined_symbol(&$value.1, source, symbol_table.get_symbol(id).borrow().name)
                                     ).as_uint()
                                     .unwrap_or_else(
                                         || errors::invalid_argument(&$value.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
-                                    ).to_le_bytes().to_vec()
+                                    ).to_le_bytes().to_vec(),
+                                    ADDRESS_SIZE
+                                )
                             },
                             
-                            NumberLike::CurrentPosition => bytecode.len().to_le_bytes().to_vec(),
+                            NumberLike::CurrentPosition => (bytecode.len().to_le_bytes().to_vec(), ADDRESS_SIZE),
                         };
 
-                        if bytes.len() > $size {
-                            errors::invalid_argument(&$value.1, source, format!("Invalid constant value. Must be a {} bytes integer.", $size).as_str());
+                        if minimum_size > $size {
+                            errors::invalid_argument(&$value.1, source, format!("Invalid constant value. Must be a {} bytes integer, but got length of {} bytes.", $size, minimum_size).as_str());
                         }
 
                         bytecode.push(ByteCodes::$name as u8);
-                        bytecode.extend_from_slice(bytes.as_slice());
+                        bytecode.extend_from_slice(&bytes[0..$size]);
                     }}
                 }
 
@@ -159,7 +161,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                         
                         let count = match count.0 {
                                 
-                                NumberLike::Number(n) => {
+                                NumberLike::Number(n, _size) => {
                                     if let Some(n) = n.as_uint() {
                                         n as usize
                                     } else {
@@ -198,7 +200,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                             let bytes_per_byte = match byte.0 {
                                 
-                                NumberLike::Number(n) => {
+                                NumberLike::Number(n, _size) => {
                                     if matches!(n, Number::Float(_)) {
                                         errors::invalid_argument(&byte.1, source, "Invalid constant value. Must be an integer, not a float.")
                                     }
@@ -222,7 +224,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             };
 
                             if bytes_per_byte.len() != 1 {
-                                errors::invalid_argument(&byte.1, source, "Invalid constant value. Must be a single byte.")
+                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value. Must be a single byte but {} bytes were provided.", bytes_per_byte.len()).as_str())
                             }
 
                             value_bytes.push(bytes_per_byte[0]);

@@ -1,10 +1,12 @@
-use std::{mem, rc::Rc};
+use std::rc::Rc;
+use std::mem;
 
 use static_assertions::const_assert_eq;
 
 use hivmlib::ByteCodes;
 
-use crate::{symbol_table::{StaticID, SymbolID}, tokenizer::SourceToken};
+use crate::tokenizer::SourceToken;
+use crate::symbol_table::{StaticID, SymbolID};
 
 
 #[derive(Debug, Clone)]
@@ -15,6 +17,41 @@ pub enum Number {
 }
 
 impl Number {
+
+    pub fn minimum_size(&self) -> u8 {
+        // A bit ugly, but it works for this purpose
+        match self {
+            Number::Uint(value) => {
+                if *value <= u8::MAX as u64 {
+                    1
+                } else if *value <= u16::MAX as u64 {
+                    2
+                } else if *value <= u32::MAX as u64 {
+                    4
+                } else {
+                    8
+                }
+            },
+            Number::Int(value) => {
+                if *value >= i8::MIN as i64 && *value <= i8::MAX as i64 {
+                    1
+                } else if *value >= i16::MIN as i64 && *value <= i16::MAX as i64 {
+                    2
+                } else if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 {
+                    4
+                } else {
+                    8
+                }
+            },
+            Number::Float(value) => {
+                if *value >= f32::MIN as f64 && *value <= f32::MAX as f64 {
+                    4
+                } else {
+                    8
+                }
+            }
+        }
+    }
 
     pub fn as_le_bytes(&self) -> Vec<u8> {
         match self {
@@ -37,12 +74,27 @@ impl Number {
 
 #[derive(Debug)]
 pub enum NumberLike {
+    Number(Number, u8),
+    Symbol(SymbolID),
+    CurrentPosition,
+}
+
+impl NumberLike {
+
+    pub fn from_number(n: &Number) -> Self {
+        NumberLike::Number(n.clone(), n.minimum_size())
+    }
+
+}
+
+
+#[derive(Debug)]
+pub enum AddressLike {
     Number(Number),
     Symbol(SymbolID),
     CurrentPosition,
 }
 
-pub type AddressLike = NumberLike;
 
 /// Representation of assembly instructions and their operands
 #[derive(Debug)]

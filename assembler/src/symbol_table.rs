@@ -113,9 +113,5 @@ impl<'a> SymbolTable<'a> {
         &self.symbols[id.0]
     }
 
-    // pub fn get_symbol_value(&self, name: &str) -> Option<AsmValue<'a>> {
-    //     self.get_symbol(name).map(|symbol| symbol.borrow().value.clone())?
-    // }
-
 }
 

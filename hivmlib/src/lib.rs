@@ -4,6 +4,7 @@ use static_assertions::{const_assert, const_assert_eq};
 
 
 pub type Address = usize;
+pub const ADDRESS_SIZE: usize = mem::size_of::<Address>();
 
 #[derive(Default)]
 pub struct VirtualAddress(pub Address);

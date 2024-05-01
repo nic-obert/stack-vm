@@ -169,7 +169,7 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
 
                         let op = &operands[0];
                         let val = match &op.value {
-                            AsmValue::Const(n) => NumberLike::Number(n.clone()),
+                            AsmValue::Const(n) => NumberLike::from_number(n),
                             AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                             AsmValue::Symbol(id) => NumberLike::Symbol(*id),
                            
@@ -260,7 +260,7 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
 
                         let count_op = &operands[1];
                         let count = match &count_op.value {
-                            AsmValue::Const(n) => NumberLike::Number(n.clone()),
+                            AsmValue::Const(n) => NumberLike::from_number(n),
                             AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                             AsmValue::Symbol(id) => NumberLike::Symbol(*id),
                            
@@ -284,7 +284,7 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
 
                         for op in operands {
                             let val = match op.value {
-                                AsmValue::Const(n) => NumberLike::Number(n),
+                                AsmValue::Const(n) => NumberLike::from_number(&n),
                                 AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                                 AsmValue::Symbol(id) => NumberLike::Symbol(id),
 
@@ -334,7 +334,7 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
 
                         let op = &operands[0];
                         let val = match &op.value {
-                            AsmValue::Const(n) => NumberLike::Number(n.clone()),
+                            AsmValue::Const(n) => NumberLike::from_number(n),
                             AsmValue::CurrentPosition => NumberLike::CurrentPosition,
                             AsmValue::Symbol(id) => NumberLike::Symbol(*id),
                            
