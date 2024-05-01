@@ -371,16 +371,18 @@ pub fn parse<'a>(token_lines: Vec<TokenList<'a>>, source: SourceCode, symbol_tab
                     errors::parsing_error(&main_operator.source, source, "Expected a symbol as section name.");
                 };
 
-                let symbol = symbol_table.get_symbol(symbol_id).borrow();
+                { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
+                    let symbol = symbol_table.get_symbol(symbol_id).borrow();
 
-                if symbol.value.is_some() {
-                    errors::symbol_redeclaration(&main_operator.source, source, &symbol);
+                    if symbol.value.is_some() {
+                        errors::symbol_redeclaration(&main_operator.source, source, &symbol);
+                    }
+                    
+                    nodes.push(AsmNode {
+                        value: AsmNodeValue::Section(AsmSection::from_name(symbol.source.string)),
+                        source: main_operator.source.clone()
+                    });
                 }
-                
-                nodes.push(AsmNode {
-                    value: AsmNodeValue::Section(AsmSection::from_name(symbol.source.string)),
-                    source: main_operator.source.clone()
-                });
                 
                 // Mark this section name as declared at this source code location.
                 symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), main_operator.source.clone());

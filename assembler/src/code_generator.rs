@@ -5,7 +5,6 @@ use crate::{lang::AsmNode, symbol_table::SymbolTable};
 use crate::lang::{AsmNodeValue, AsmSection, AsmInstruction, AddressLike, NumberLike, Number};
 use crate::tokenizer::SourceCode;
 
-use clap::error;
 use hivmlib::{ByteCodes, VirtualAddress};
 
 
@@ -19,11 +18,15 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
     // The vector will most probably be reallocated, but this pre-allocation should avoid most minor initial reallocations.
     // In case all nodes are single-byte instructions, all reallocations are prevented.
     // In case the assembly code contains many non-code structures (sections, macros, etc.) this approach may avoid a reallocation.
-    let mut bytecode = Vec::with_capacity(asm.len());
+    // + 9 to include an initial jump instruction to the entry point (1-byte instruction + 8-byte address)
+    let mut bytecode = Vec::with_capacity(asm.len() + 9);
 
     let mut label_map: HashMap<&str, VirtualAddress> = HashMap::new();
 
     let mut current_section: Option<AsmSection> = None;
+
+    bytecode.push(ByteCodes::JumpConst as u8);
+    bytecode.extend_from_slice([0u8; 8].as_ref()); // A placeholder for the entry point address, will be filled later
 
     for node in asm {
 

@@ -1,6 +1,6 @@
 use std::mem;
 
-use static_assertions::const_assert_eq;
+use static_assertions::{const_assert, const_assert_eq};
 
 
 pub type Address = usize;
@@ -22,114 +22,14 @@ const_assert_eq!(mem::size_of::<VirtualAddress>(), mem::size_of::<usize>());
 pub type ByteCode<'a> = &'a [u8];
 
 
+macro_rules! declare_instructions {
+    ($($name:ident $asm_name:ident),+) => {
+        
 /// HiVM instructions. Each instruction is represented by one byte.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum ByteCodes {
-
-    AddInt1 = 0,
-    AddInt2,
-    AddInt4,
-    AddInt8,
-    SubInt1,
-    SubInt2,
-    SubInt4,
-    SubInt8,
-    MulInt1,
-    MulInt2,
-    MulInt4,
-    MulInt8,
-    DivInt1,
-    DivInt2,
-    DivInt4,
-    DivInt8,
-    ModInt1,
-    ModInt2,
-    ModInt4,
-    ModInt8,
-
-    AddFloat4,
-    AddFloat8,
-    SubFloat4,
-    SubFloat8,
-    MulFloat4,
-    MulFloat8,
-    DivFloat4,
-    DivFloat8,
-    ModFloat4,
-    ModFloat8,
-
-    LoadStatic1,
-    LoadStatic2,
-    LoadStatic4,
-    LoadStatic8,
-    LoadStaticBytes,
-
-    LoadConst1,
-    LoadConst2,
-    LoadConst4,
-    LoadConst8,
-    LoadConstBytes,
-
-    Load1,
-    Load2,
-    Load4,
-    Load8,
-    LoadBytes,
-    
-    VirtualConstToReal,
-    VirtualToReal,
-
-    Store1,
-    Store2,
-    Store4,
-    Store8,
-    StoreBytes,
-
-    Memmove1,
-    Memmove2,
-    Memmove4,
-    Memmove8,
-    MemmoveBytes,
-
-    Duplicate1,
-    Duplicate2,
-    Duplicate4,
-    Duplicate8,
-    DuplicateBytes,
-
-    Malloc,
-    Realloc,
-    Free,
-
-    Intr,
-    IntrConst,
-
-    Exit,
-
-    JumpConst,
-    Jump,
-
-    JumpNotZeroConst1,
-    JumpNotZeroConst2,
-    JumpNotZeroConst4,
-    JumpNotZeroConst8,
-    JumpNotZero1,
-    JumpNotZero2,
-    JumpNotZero4,
-    JumpNotZero8,
-    JumpZeroConst1,
-    JumpZeroConst2,
-    JumpZeroConst4,
-    JumpZeroConst8,
-    JumpZero1,
-    JumpZero2,
-    JumpZero4,
-    JumpZero8,
-
-    /// No operation. Do nothing for this cycle.
-    Nop
-
+    $($name),+
 }
 
 impl From<u8> for ByteCodes {
@@ -145,98 +45,132 @@ impl ByteCodes {
 
     pub fn from_string(string: &str) -> Option<Self> {
         match string {
-            "addi1" => Some(Self::AddInt1),
-            "addi2" => Some(Self::AddInt2),
-            "addi4" => Some(Self::AddInt4),
-            "addi8" => Some(Self::AddInt8),
-            "subi1" => Some(Self::SubInt1),
-            "subi2" => Some(Self::SubInt2),
-            "subi4" => Some(Self::SubInt4),
-            "subi8" => Some(Self::SubInt8),
-            "muli1" => Some(Self::MulInt1),
-            "muli2" => Some(Self::MulInt2),
-            "muli4" => Some(Self::MulInt4),
-            "muli8" => Some(Self::MulInt8),
-            "divi1" => Some(Self::DivInt1),
-            "divi2" => Some(Self::DivInt2),
-            "divi4" => Some(Self::DivInt4),
-            "divi8" => Some(Self::DivInt8),
-            "modi1" => Some(Self::ModInt1),
-            "modi2" => Some(Self::ModInt2),
-            "modi4" => Some(Self::ModInt4),
-            "modi8" => Some(Self::ModInt8),
-            "addf4" => Some(Self::AddFloat4),
-            "addf8" => Some(Self::AddFloat8),
-            "subf4" => Some(Self::SubFloat4),
-            "subf8" => Some(Self::SubFloat8),
-            "mulf4" => Some(Self::MulFloat4),
-            "mulf8" => Some(Self::MulFloat8),
-            "divf4" => Some(Self::DivFloat4),
-            "divf8" => Some(Self::DivFloat8),
-            "modf4" => Some(Self::ModFloat4),
-            "modf8" => Some(Self::ModFloat8),
-            "loadstatic1" => Some(Self::LoadStatic1),
-            "loadstatic2" => Some(Self::LoadStatic2),
-            "loadstatic4" => Some(Self::LoadStatic4),
-            "loadstatic8" => Some(Self::LoadStatic8),
-            "loadstaticn" => Some(Self::LoadStaticBytes),
-            "loadconst1" => Some(Self::LoadConst1),
-            "loadconst2" => Some(Self::LoadConst2),
-            "loadconst4" => Some(Self::LoadConst4),
-            "loadconst8" => Some(Self::LoadConst8),
-            "loadconstn" => Some(Self::LoadConstBytes),
-            "load1" => Some(Self::Load1),
-            "load2" => Some(Self::Load2),
-            "load4" => Some(Self::Load4),
-            "load8" => Some(Self::Load8),
-            "loadn" => Some(Self::LoadBytes),
-            "virtualconsttoreal" => Some(Self::VirtualConstToReal),
-            "virtualtoreal" => Some(Self::VirtualToReal),
-            "store1" => Some(Self::Store1),
-            "store2" => Some(Self::Store2),
-            "store4" => Some(Self::Store4),
-            "store8" => Some(Self::Store8),
-            "storen" => Some(Self::StoreBytes),
-            "memmove1" => Some(Self::Memmove1),
-            "memmove2" => Some(Self::Memmove2),
-            "memmove4" => Some(Self::Memmove4),
-            "memmove8" => Some(Self::Memmove8),
-            "memmoven" => Some(Self::MemmoveBytes),
-            "malloc" => Some(Self::Malloc),
-            "realloc" => Some(Self::Realloc),
-            "free" => Some(Self::Free),
-            "intr" => Some(Self::Intr),
-            "exit" => Some(Self::Exit),
-            "jumpconst" => Some(Self::JumpConst),
-            "jump" => Some(Self::Jump),
-            "jumpnzconst1" => Some(Self::JumpNotZeroConst1),
-            "jumpnzconst2" => Some(Self::JumpNotZeroConst2),
-            "jumpnzconst4" => Some(Self::JumpNotZeroConst4),
-            "jumpnzconst8" => Some(Self::JumpNotZeroConst8),
-            "jumpnz1" => Some(Self::JumpNotZero1),
-            "jumpnz2" => Some(Self::JumpNotZero2),
-            "jumpnz4" => Some(Self::JumpNotZero4),
-            "jumpnz8" => Some(Self::JumpNotZero8),
-            "jumpzconst1" => Some(Self::JumpZeroConst1),
-            "jumpzconst2" => Some(Self::JumpZeroConst2),
-            "jumpzconst4" => Some(Self::JumpZeroConst4),
-            "jumpzconst8" => Some(Self::JumpZeroConst8),
-            "jumpz1" => Some(Self::JumpZero1),
-            "jumpz2" => Some(Self::JumpZero2),
-            "jumpz4" => Some(Self::JumpZero4),
-            "jumpz8" => Some(Self::JumpZero8),
-            "nop" => Some(Self::Nop),
-            
+            $(stringify!($asm_name) => Some(Self::$name),)+
             _ => None
         }
     }
 
 }
 
+    };
+}
+
+declare_instructions! {
+
+    AddInt1 addi1,
+    AddInt2 addi2,
+    AddInt4 addi4,
+    AddInt8 addi8,
+    SubInt1 subi1,
+    SubInt2 subi2,
+    SubInt4 subi4,
+    SubInt8 subi8,
+    MulInt1 muli1,
+    MulInt2 muli2,
+    MulInt4 muli4,
+    MulInt8 muli8,
+    DivInt1 divi1,
+    DivInt2 divi2,
+    DivInt4 divi4,
+    DivInt8 divi8,
+    ModInt1 modi1,
+    ModInt2 modi2,
+    ModInt4 modi4,
+    ModInt8 modi8,
+
+    AddFloat4 addf4,
+    AddFloat8 addf8,
+    SubFloat4 subf4,
+    SubFloat8 subf8,
+    MulFloat4 mulf4,
+    MulFloat8 mulf8,
+    DivFloat4 divf4,
+    DivFloat8 divf8,
+    ModFloat4 modf4,
+    ModFloat8 modf8,
+
+    LoadStatic1 loadstatic1,
+    LoadStatic2 loadstatic2,
+    LoadStatic4 loadstatic4,
+    LoadStatic8 loadstatic8,
+    LoadStaticBytes loadstaticn,
+
+    LoadConst1 loadconst1,
+    LoadConst2 loadconst2,
+    LoadConst4 loadconst4,
+    LoadConst8 loadconst8,
+    LoadConstBytes loadconstn,
+
+    Load1 load1,
+    Load2 load2,
+    Load4 load4,
+    Load8 load8,
+    LoadBytes loadn,
+    
+    VirtualConstToReal virtualconsttoreal,
+    VirtualToReal virtualtoreal,
+
+    Store1 store1,
+    Store2 store2,
+    Store4 store4,
+    Store8 store8,
+    StoreBytes storen,
+
+    Memmove1 memmove1,
+    Memmove2 memmove2,
+    Memmove4 memmove4,
+    Memmove8 memmove8,
+    MemmoveBytes memmoven,
+
+    Duplicate1 dup1,
+    Duplicate2 dup2,
+    Duplicate4 dup4,
+    Duplicate8 dup8,
+    DuplicateBytes dupn,
+
+    Malloc malloc,
+    Realloc realloc,
+    Free free,
+
+    Intr intr,
+    IntrConst intrconst,
+
+    Exit exit,
+
+    JumpConst jmpconst,
+    Jump jmp,
+
+    JumpNotZeroConst1 jnzconst1,
+    JumpNotZeroConst2 jnzconst2,
+    JumpNotZeroConst4 jnzconst4,
+    JumpNotZeroConst8 jnzconst8,
+    JumpNotZero1 jnz1,
+    JumpNotZero2 jnz2,
+    JumpNotZero4 jnz4,
+    JumpNotZero8 jnz8,
+    JumpZeroConst1 jzconst1,
+    JumpZeroConst2 jzconst2,
+    JumpZeroConst4 jzconst4,
+    JumpZeroConst8 jzconst8,
+    JumpZero1 jz1,
+    JumpZero2 jz2,
+    JumpZero4 jz4,
+    JumpZero8 jz8,
+
+    Nop nop
+
+}
+
 
 #[repr(u8)]
 pub enum Interrupts {
-    Write,
+    Print1 = 0,
+    Print2,
+    Print4,
+    Print8,
+    PrintBytes,
+    PrintChar,
+    PrintString,
 }
 
 impl From<u8> for Interrupts {

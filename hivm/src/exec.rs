@@ -666,12 +666,12 @@ impl VM {
 
                 ByteCodes::Intr => {
                     let intr_code = Interrupts::from(self.opstack.pop_1());
-                    self.handle_interrupt(intr_code);
+                    self.handle_interrupt(intr_code, &mut program);
                 },
 
                 ByteCodes::IntrConst => {
                     let intr_code = Interrupts::from(self.opstack.pop_1());
-                    self.handle_interrupt(intr_code);
+                    self.handle_interrupt(intr_code, &mut program);
                 }
 
                 ByteCodes::Duplicate1 => {
@@ -853,9 +853,45 @@ impl VM {
     }
 
 
-    fn handle_interrupt(&mut self, intr_code: Interrupts) {
+    fn handle_interrupt(&mut self, intr_code: Interrupts, program: &mut Program) {
+
         match intr_code {
-            Interrupts::Write => todo!(),
+
+            Interrupts::Print1 => {
+                let value = self.opstack.pop_1();
+                print!("{}", value);
+            },
+            Interrupts::Print2 => {
+                let value = self.opstack.pop_2();
+                print!("{}", value);
+            },
+            Interrupts::Print4 => {
+                let value = self.opstack.pop_4();
+                print!("{}", value);
+            },
+            Interrupts::Print8 => {
+                let value = self.opstack.pop_8();
+                print!("{}", value);
+            },
+            Interrupts::PrintBytes => {
+                let count = self.opstack.pop_8() as usize;
+                let bytes = self.opstack.pop_bytes(count);
+                print!("{:?}", bytes);
+            },
+            Interrupts::PrintChar => {
+                let value = self.opstack.pop_1();
+                print!("{}", value as char);
+            },
+            Interrupts::PrintString => {
+                let length = self.opstack.pop_8() as usize;
+                let bytes = self.opstack.pop_bytes(length);
+                // Use unchecked because it's the programmer's responsibility to ensure the string is valid
+                let string = unsafe {
+                    std::str::from_utf8_unchecked(bytes)
+                };
+                print!("{}", string);
+            },
+
         }
     }
 
