@@ -1,7 +1,7 @@
 
 .text
 
-    loadconst8 section
+    loadconst4 90
+    intrconst 2
     
 
-.section

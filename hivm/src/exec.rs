@@ -6,13 +6,6 @@ use std::alloc;
 use std::ptr;
 
 
-/// Interprets the first 8 bytes of the given byte slice as an address.
-#[inline]
-unsafe fn read_address(bytes: *const u8) -> Address {
-    *(bytes as *const Address)
-}
-
-
 struct Stack {
     /// Raw pointer to the top of the stack. Modifying this pointer will directly modify the stack.
     tos: *mut u8,
@@ -48,28 +41,28 @@ impl Stack {
 
     pub fn peek_1(&self) -> u8 {
         unsafe {
-            self.tos.byte_sub(mem::size_of::<u8>()).read()
+            self.tos.byte_sub(mem::size_of::<u8>()).read_unaligned()
         }
     }
 
 
     pub fn peek_2(&self) -> u16 {
         unsafe {
-            (self.tos.byte_sub(mem::size_of::<u16>()) as *const u16).read()
+            (self.tos.byte_sub(mem::size_of::<u16>()) as *const u16).read_unaligned()
         }
     }
 
 
     pub fn peek_4(&self) -> u32 {
         unsafe {
-            (self.tos.byte_sub(mem::size_of::<u32>()) as *const u32).read()
+            (self.tos.byte_sub(mem::size_of::<u32>()) as *const u32).read_unaligned()
         }
     }
 
 
     pub fn peek_8(&self) -> u64 {
         unsafe {
-            (self.tos.byte_sub(mem::size_of::<u64>()) as *const u64).read()
+            (self.tos.byte_sub(mem::size_of::<u64>()) as *const u64).read_unaligned()
         }
     }
 
@@ -84,7 +77,7 @@ impl Stack {
     pub fn push_1(&mut self, byte: u8) {
         unsafe {
             self.tos = self.tos.byte_sub(mem::size_of::<u8>());
-            self.tos.write(byte);
+            self.tos.write_unaligned(byte);
         }
     }
 
@@ -92,7 +85,7 @@ impl Stack {
     pub fn push_2(&mut self, value: u16) {
         unsafe {
             self.tos = self.tos.byte_sub(mem::size_of::<u16>());
-            (self.tos as *mut u16).write(value);
+            (self.tos as *mut u16).write_unaligned(value);
         }
     }
 
@@ -100,7 +93,7 @@ impl Stack {
     pub fn push_4(&mut self, value: u32) {
         unsafe {
             self.tos = self.tos.byte_sub(mem::size_of::<u32>());
-            (self.tos as *mut u32).write(value);
+            (self.tos as *mut u32).write_unaligned(value);
         }
     }
 
@@ -108,7 +101,7 @@ impl Stack {
     pub fn push_8(&mut self, value: u64) {
         unsafe {
             self.tos = self.tos.byte_sub(mem::size_of::<u64>());
-            (self.tos as *mut u64).write(value);
+            (self.tos as *mut u64).write_unaligned(value);
         }
     }
 
@@ -131,7 +124,7 @@ impl Stack {
 
     pub fn pop_1(&mut self) -> u8 {
         unsafe {
-            let value = self.tos.read();
+            let value = self.tos.read_unaligned();
             self.tos = self.tos.byte_add(mem::size_of::<u8>());
             value
         }
@@ -140,7 +133,7 @@ impl Stack {
 
     pub fn pop_2(&mut self) -> u16 {
         unsafe {
-            let value = (self.tos as *const u16).read();
+            let value = (self.tos as *const u16).read_unaligned();
             self.tos = self.tos.byte_add(mem::size_of::<u16>());
             value
         }
@@ -149,7 +142,7 @@ impl Stack {
 
     pub fn pop_4(&mut self) -> u32 {
         unsafe {
-            let value = (self.tos as *const u32).read();
+            let value = (self.tos as *const u32).read_unaligned();
             self.tos = self.tos.byte_add(mem::size_of::<u32>());
             value
         }
@@ -158,7 +151,7 @@ impl Stack {
 
     pub fn pop_8(&mut self) -> u64 {
         unsafe {
-            let value = (self.tos as *const u64).read();
+            let value = (self.tos as *const u64).read_unaligned();
             self.tos = self.tos.byte_add(mem::size_of::<u64>());
             value
         }
@@ -220,7 +213,7 @@ impl<'a> Program<'a> {
 
     pub fn fetch_2(&mut self) -> u16 {
         let value = unsafe {
-            *((self.code.as_ptr().add(self.program_counter.0)) as *const u16)
+            ((self.code.as_ptr().add(self.program_counter.0)) as *const u16).read_unaligned()
         };
         self.program_counter.0 += 2;
         value
@@ -229,7 +222,7 @@ impl<'a> Program<'a> {
 
     pub fn fetch_4(&mut self) -> u32 {
         let value = unsafe {
-            *(self.code.as_ptr().add(self.program_counter.0) as *const u32)
+            (self.code.as_ptr().add(self.program_counter.0) as *const u32).read_unaligned()
         };
         self.program_counter.0 += 4;
         value
@@ -238,7 +231,7 @@ impl<'a> Program<'a> {
 
     pub fn fetch_8(&mut self) -> u64 {
         let value = unsafe {
-            *(self.code.as_ptr().add(self.program_counter.0) as *const u64)
+            (self.code.as_ptr().add(self.program_counter.0) as *const u64).read_unaligned()
         };
         self.program_counter.0 += 8;
         value
@@ -670,7 +663,7 @@ impl VM {
                 },
 
                 ByteCodes::IntrConst => {
-                    let intr_code = Interrupts::from(self.opstack.pop_1());
+                    let intr_code = Interrupts::from(program.fetch_1());
                     self.handle_interrupt(intr_code, &mut program);
                 }
 
