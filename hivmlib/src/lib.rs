@@ -5,6 +5,7 @@ use static_assertions::{const_assert, const_assert_eq};
 
 pub type Address = usize;
 pub const ADDRESS_SIZE: usize = mem::size_of::<Address>();
+pub const INSTRUCTION_SIZE: usize = 1;
 
 #[derive(Default)]
 pub struct VirtualAddress(pub Address);
@@ -161,6 +162,8 @@ declare_instructions! {
     Nop nop
 
 }
+
+const_assert!(mem::size_of::<ByteCodes>() == INSTRUCTION_SIZE);
 
 
 #[repr(u8)]

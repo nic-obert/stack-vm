@@ -144,7 +144,39 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                 });
                 
                 // Mark the label as declared at this location in the source code. No further declarations of the same label are allowed.
-                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), op.source.clone());
+                // Leave the value as None since its location in the binary is not known yet. It will be resolved when the binary is generated.
+                symbol_table.define_symbol(symbol_id, None, op.source.clone());
+            },
+
+            TokenValue::Mod => todo!(),
+
+            TokenValue::Dot => {
+                if operands.len() != 1 {
+                    errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+                }
+
+                let op = &operands[0];
+                let symbol_id = if let AsmValue::Symbol(id) = op.value {
+                    id
+                } else {
+                    errors::parsing_error(&op.source, source, "Expected a symbol as section name.");
+                };
+
+                { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
+                    let symbol = symbol_table.get_symbol(symbol_id).borrow();
+
+                    if symbol.value.is_some() {
+                        errors::symbol_redeclaration(&op.source, source, &symbol);
+                    }
+                    
+                    nodes.push(AsmNode {
+                        value: AsmNodeValue::Section(AsmSection::from_name(symbol.source.string)),
+                        source: main_operator.source.clone()
+                    });
+                }
+                
+                // Mark this section name as declared at this source code location.
+                symbol_table.define_symbol(symbol_id, None, main_operator.source.clone());
             },
 
             TokenValue::Instruction(code) => {
@@ -370,36 +402,6 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                 }
             },
 
-            TokenValue::Mod => todo!(),
-
-            TokenValue::Dot => {
-                if operands.len() != 1 {
-                    errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                }
-
-                let op = &operands[0];
-                let symbol_id = if let AsmValue::Symbol(id) = op.value {
-                    id
-                } else {
-                    errors::parsing_error(&op.source, source, "Expected a symbol as section name.");
-                };
-
-                { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
-                    let symbol = symbol_table.get_symbol(symbol_id).borrow();
-
-                    if symbol.value.is_some() {
-                        errors::symbol_redeclaration(&op.source, source, &symbol);
-                    }
-                    
-                    nodes.push(AsmNode {
-                        value: AsmNodeValue::Section(AsmSection::from_name(symbol.source.string)),
-                        source: main_operator.source.clone()
-                    });
-                }
-                
-                // Mark this section name as declared at this source code location.
-                symbol_table.define_symbol(symbol_id, AsmValue::Symbol(symbol_id), main_operator.source.clone());
-            },
             
             TokenValue::Number(_) |
             TokenValue::Identifier(_) |

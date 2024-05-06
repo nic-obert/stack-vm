@@ -6,6 +6,7 @@ Project Description
 
 ### Todo
 
+- [ ] maybe the section enum should not exist. section names should be arbitrary maybe. the only exception would be the .text section if an entry point is required. maybe we should specify a .entry or .start section that tells the assembler that is the entry point  
 - [ ] write assembly documentation  
 - [ ] implement macros  
 - [ ] implement a primitive assembly module system like #include in C  
@@ -19,11 +20,11 @@ Project Description
 ### In Progress
 
 - [ ] implement assembly sections  
-- [ ] write an assembler. advanced parsing would be nice to have. a tokenizer is thus required instead of a simple fixed argument table  
 - [ ] add interrupts. some interrupts are predefined, other interrupts cause to jump to a specific memory address and execute from there  
 
 ### Done ✓
 
+- [x] write an assembler. advanced parsing would be nice to have. a tokenizer is thus required instead of a simple fixed argument table  
 - [x] refactor the project and divide tasks into different files  
 - [x] Differentiate between variable stack and operation stack  
 - [x] update documentation with the new stack  

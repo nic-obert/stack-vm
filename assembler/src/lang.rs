@@ -6,7 +6,7 @@ use static_assertions::const_assert_eq;
 use hivmlib::ByteCodes;
 
 use crate::tokenizer::SourceToken;
-use crate::symbol_table::{StaticID, SymbolID};
+use crate::symbol_table::{StaticID, SymbolID, SymbolTable};
 
 
 #[derive(Debug, Clone)]
@@ -274,9 +274,26 @@ pub enum AsmValue {
 
 impl AsmValue {
 
-    pub fn as_uint(&self) -> Option<u64> {
+    fn as_uint_strict(&self) -> Option<u64> {
         match self {
             AsmValue::Const(n) => n.as_uint(),
+            _ => None
+        }
+    }
+
+
+    pub fn as_uint(&self, symbol_table: &SymbolTable) -> Option<u64> {
+        match self {
+
+            AsmValue::Const(n) => n.as_uint(),
+
+            AsmValue::Symbol(id)
+             => symbol_table.get_symbol(*id)
+                .borrow()
+                .value
+                .as_ref()
+                .and_then(|v| v.as_uint_strict()),
+
             _ => None
         }
     }

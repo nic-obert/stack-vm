@@ -1,11 +1,19 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::errors;
 use crate::{lang::AsmNode, symbol_table::SymbolTable};
 use crate::lang::{AsmNodeValue, AsmSection, AsmInstruction, AddressLike, NumberLike, Number};
-use crate::tokenizer::SourceCode;
+use crate::tokenizer::{SourceCode, SourceToken};
 
-use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE};
+use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE, INSTRUCTION_SIZE};
+
+
+struct UnresolvedLabel<'a> {
+    location: VirtualAddress,
+    name: &'a str,
+    source: Rc<SourceToken<'a>>
+}
 
 
 /// Generates byte code from the given assembly nodes.
@@ -19,9 +27,10 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
     // In case all nodes are single-byte instructions, all reallocations are prevented.
     // In case the assembly code contains many non-code structures (sections, macros, etc.) this approach may avoid a reallocation.
     // + 9 to include an initial jump instruction to the entry point (1-byte instruction + 8-byte address)
-    let mut bytecode = Vec::with_capacity(asm.len() + 9);
+    let mut bytecode = Vec::with_capacity(asm.len() + ADDRESS_SIZE + INSTRUCTION_SIZE);
 
     let mut label_map: HashMap<&str, VirtualAddress> = HashMap::new();
+    let mut unresolved_labels: Vec<UnresolvedLabel> = Vec::new();
 
     let mut current_section: Option<AsmSection> = None;
 
@@ -53,6 +62,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                     errors::outside_section(&node.source, source, "Instructions must be located inside an assembly section");
                 }
 
+
                 macro_rules! one_arg_address_instruction {
                     ($name:ident, $addr:ident) => {{
                         let operand: VirtualAddress = match $addr.0 {
@@ -65,18 +75,13 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                 }
                             },
 
-                            AddressLike::Symbol(id) => {
-                                let symbol = symbol_table.get_symbol(id).borrow();
-                                
-                                let value = symbol.value.as_ref().unwrap_or_else(
-                                    || errors::undefined_symbol(&node.source, source, symbol.name))
-                                    .as_uint()
+                            AddressLike::Symbol(id) => VirtualAddress(
+                                get_symbol_or_placeholder!(id, &$addr.1, |value, symbol| 
+                                    value.as_uint(symbol_table)
                                     .unwrap_or_else(
                                         || errors::invalid_argument(&$addr.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
-                                    );
-
-                                VirtualAddress(value as usize)
-                            },
+                                    )
+                                ) as usize),
 
                             AddressLike::CurrentPosition => VirtualAddress(bytecode.len()),
                         };
@@ -89,35 +94,53 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                 macro_rules! one_arg_number_instruction {
                     ($name:ident, $value:ident, $size:literal) => {{
 
-                        let (bytes, minimum_size) = match $value.0 {
+                        let (bytes, minimum_size) = match &$value.0 {
 
-                            NumberLike::Number(n, size) => (n.as_le_bytes(), size as usize),
+                            NumberLike::Number(n, size) => (n.as_le_bytes(), *size as usize),
 
-                            NumberLike::Symbol(id) => {
-                                let symbol = symbol_table.get_symbol(id).borrow();
-
-                                (symbol.value.as_ref()
-                                    .unwrap_or_else(
-                                        || errors::undefined_symbol(&$value.1, source, symbol_table.get_symbol(id).borrow().name)
-                                    ).as_uint()
+                            NumberLike::Symbol(id) => (
+                                get_symbol_or_placeholder!(*id, &$value.1, |value, symbol| 
+                                    value.as_uint(symbol_table)
                                     .unwrap_or_else(
                                         || errors::invalid_argument(&$value.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
-                                    ).to_le_bytes().to_vec(),
-                                    ADDRESS_SIZE
-                                )
-                            },
+                                    )
+                                ).to_le_bytes().to_vec(),
+                                ADDRESS_SIZE
+                            ),
                             
                             NumberLike::CurrentPosition => (bytecode.len().to_le_bytes().to_vec(), ADDRESS_SIZE),
                         };
 
                         if minimum_size > $size {
-                            errors::invalid_argument(&$value.1, source, format!("Invalid constant value. Must be a {} bytes integer, but got length of {} bytes.", $size, minimum_size).as_str());
+                            errors::invalid_argument(&$value.1, source, format!("Invalid constant value `{:?}`. Must be a {} bytes integer, but got length of {} bytes.", $value.0, $size, minimum_size).as_str());
                         }
 
                         bytecode.push(ByteCodes::$name as u8);
                         bytecode.extend_from_slice(&bytes[0..$size]);
                     }}
                 }
+
+                macro_rules! get_symbol_or_placeholder {
+                    ($symbol_id:expr, $arg_source:expr, |$value:ident, $symbol:ident| $operations:stmt) => {{
+
+                        let $symbol = symbol_table.get_symbol($symbol_id).borrow();
+
+                        if let Some($value) = $symbol.value.as_ref() {
+                            $operations
+                        } else {
+                            // The symbol is not defined yet, so we need to resolve it later
+                            unresolved_labels.push(UnresolvedLabel {
+                                location: VirtualAddress(bytecode.len()),
+                                name: $symbol.name,
+                                source: Rc::clone($arg_source)
+                            });
+
+                            // Return a placeholder value that will be replaced later during the final symbol resolution
+                            0
+                        }
+                    }};
+                }
+
 
                 match instruction {
                     AsmInstruction::AddInt1 => bytecode.push(ByteCodes::AddInt1 as u8),
@@ -169,17 +192,13 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                     }
                                 },
     
-                                NumberLike::Symbol(id) => {
-                                    let symbol = symbol_table.get_symbol(id).borrow();
-                                    
-                                    symbol.value.as_ref()
-                                        .unwrap_or_else(
-                                            || errors::undefined_symbol(&count.1, source, symbol.name)
-                                        ).as_uint()
+                                NumberLike::Symbol(id)
+                                 => get_symbol_or_placeholder!(id, &count.1, |value, symbol| 
+                                        value.as_uint(symbol_table)
                                         .unwrap_or_else(
                                             || errors::invalid_argument(&count.1, source, format!("Invalid count `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                         ) as usize
-                                },
+                                    ),
     
                                 NumberLike::CurrentPosition => bytecode.len(),
                             };
@@ -198,33 +217,29 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                         
                         for byte in bytes {
 
-                            let bytes_per_byte = match byte.0 {
+                            let bytes_per_byte = match &byte.0 {
                                 
                                 NumberLike::Number(n, _size) => {
                                     if matches!(n, Number::Float(_)) {
-                                        errors::invalid_argument(&byte.1, source, "Invalid constant value. Must be an integer, not a float.")
+                                        errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be an integer, not a float.", n).as_str())
                                     }
 
                                     n.as_le_bytes()
                                 },
 
-                                NumberLike::Symbol(id) => {
-                                    let symbol = symbol_table.get_symbol(id).borrow();
-
-                                    symbol.value.as_ref()
-                                        .unwrap_or_else(
-                                            || errors::undefined_symbol(&byte.1, source, symbol_table.get_symbol(id).borrow().name)
-                                        ).as_uint()
+                                NumberLike::Symbol(id) 
+                                 => get_symbol_or_placeholder!(*id, &byte.1, |value, symbol|
+                                        value.as_uint(symbol_table)
                                         .unwrap_or_else(
                                             || errors::invalid_argument(&byte.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
-                                        ).to_le_bytes().to_vec()
-                                },
+                                    ))
+                                    .to_le_bytes().to_vec(),
 
                                 NumberLike::CurrentPosition => bytecode.len().to_le_bytes().to_vec(),
                             };
 
                             if bytes_per_byte.len() != 1 {
-                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value. Must be a single byte but {} bytes were provided.", bytes_per_byte.len()).as_str())
+                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, bytes_per_byte.len()).as_str())
                             }
 
                             value_bytes.push(bytes_per_byte[0]);
@@ -287,6 +302,19 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
         };
 
     }
+
+    // Fill in the unresolved symbols
+    for label in unresolved_labels {
+        
+        let value = label_map.get(label.name).unwrap_or_else(
+            || errors::undefined_symbol(&label.source, source, label.name)
+        );
+
+        bytecode[label.location.0..(label.location.0 + ADDRESS_SIZE)].copy_from_slice(&value.0.to_le_bytes());
+
+    }
+
+    // TODO: entry point
 
     bytecode.shrink_to_fit();
     bytecode

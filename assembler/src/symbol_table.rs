@@ -79,9 +79,9 @@ impl<'a> SymbolTable<'a> {
     // }
 
 
-    pub fn define_symbol(&self, id: SymbolID, value: AsmValue, definition_source: Rc<SourceToken<'a>>) {
+    pub fn define_symbol(&self, id: SymbolID, value: Option<AsmValue>, definition_source: Rc<SourceToken<'a>>) {
         let mut symbol = self.symbols[id.0].borrow_mut();
-        symbol.value = Some(value);
+        symbol.value = value;
         symbol.source = definition_source;
     }
 
