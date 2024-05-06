@@ -2,7 +2,7 @@ use hivmlib::ByteCodes;
 
 use crate::tokenizer::{SourceCode, Token, TokenList, TokenValue};
 use crate::symbol_table::SymbolTable;
-use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmSection, AsmValue, Number, NumberLike};
+use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmValue, Number, NumberLike};
 use crate::errors;
 
 
@@ -170,7 +170,7 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
                     }
                     
                     nodes.push(AsmNode {
-                        value: AsmNodeValue::Section(AsmSection::from_name(symbol.source.string)),
+                        value: AsmNodeValue::Section(symbol.source.string),
                         source: main_operator.source.clone()
                     });
                 }

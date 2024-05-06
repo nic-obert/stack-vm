@@ -9,6 +9,9 @@ use crate::tokenizer::SourceToken;
 use crate::symbol_table::{StaticID, SymbolID, SymbolTable};
 
 
+pub const ENTRY_SECTION_NAME: &str = "text";
+
+
 #[derive(Debug, Clone)]
 pub enum Number {
     Uint(u64),
@@ -207,35 +210,6 @@ const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<By
 
 
 #[derive(Debug)]
-pub enum AsmSection<'a> {
-    Text,
-    Data,
-    Generic(&'a str)
-}
-
-impl<'a> AsmSection<'a> {
-
-    pub fn from_name(name: &'a str) -> AsmSection<'a> {
-        match name {
-            "text" => AsmSection::Text,
-            "data" => AsmSection::Data,
-            _ => AsmSection::Generic(name)
-        }
-    }
-
-
-    pub fn name(&self) -> &'a str {
-        match self {
-            AsmSection::Text => "text",
-            AsmSection::Data => "data",
-            AsmSection::Generic(name) => name
-        }
-    }
-
-}
-
-
-#[derive(Debug)]
 pub struct AsmNode<'a> {
 
     pub value: AsmNodeValue<'a>,
@@ -257,7 +231,7 @@ pub struct AsmOperand<'a> {
 pub enum AsmNodeValue<'a> {
     Instruction(AsmInstruction<'a>),
     Label(&'a str),
-    Section(AsmSection<'a>),
+    Section(&'a str),
     // MacroDef, TODO
     // MacroCall, TODO
 

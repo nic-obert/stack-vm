@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::errors;
 use crate::{lang::AsmNode, symbol_table::SymbolTable};
-use crate::lang::{AsmNodeValue, AsmSection, AsmInstruction, AddressLike, NumberLike, Number};
+use crate::lang::{AddressLike, AsmInstruction, AsmNodeValue, Number, NumberLike, ENTRY_SECTION_NAME};
 use crate::tokenizer::{SourceCode, SourceToken};
 
 use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE, INSTRUCTION_SIZE};
@@ -32,7 +32,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
     let mut label_map: HashMap<&str, VirtualAddress> = HashMap::new();
     let mut unresolved_labels: Vec<UnresolvedLabel> = Vec::new();
 
-    let mut current_section: Option<AsmSection> = None;
+    let mut current_section: Option<&str> = None;
 
     bytecode.push(ByteCodes::JumpConst as u8);
     bytecode.extend_from_slice([0u8; 8].as_ref()); // A placeholder for the entry point address, will be filled later
@@ -52,7 +52,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
             
             AsmNodeValue::Section(section) => {
                 // Sections are secretly labels
-                label_map.insert(section.name(), VirtualAddress(bytecode.len()));
+                label_map.insert(section, VirtualAddress(bytecode.len()));
                 current_section = Some(section);
             },
 
@@ -314,7 +314,10 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
     }
 
-    // TODO: entry point
+    // Fill in the entry point address
+    if let Some(entry) = label_map.get(ENTRY_SECTION_NAME) {
+        bytecode[1..(1 + ADDRESS_SIZE)].copy_from_slice(&entry.0.to_le_bytes());
+    }
 
     bytecode.shrink_to_fit();
     bytecode
