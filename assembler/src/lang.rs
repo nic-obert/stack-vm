@@ -218,7 +218,7 @@ pub struct AsmNode<'a> {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AsmOperand<'a> {
 
     pub value: AsmValue,
@@ -232,9 +232,6 @@ pub enum AsmNodeValue<'a> {
     Instruction(AsmInstruction<'a>),
     Label(&'a str),
     Section(&'a str),
-    // MacroDef, TODO
-    // MacroCall, TODO
-
 }
 
 
@@ -244,6 +241,7 @@ pub enum AsmValue {
     CurrentPosition,
     StringLiteral(StaticID),
     Symbol(SymbolID),
+    MacroSymbol(SymbolID),
 }
 
 impl AsmValue {

@@ -31,7 +31,7 @@ impl Scope<'_> {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct SymbolID(pub usize);
 
 #[derive(Debug, Clone, Copy)]

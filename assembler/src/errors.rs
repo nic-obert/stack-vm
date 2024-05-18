@@ -36,8 +36,8 @@ pub fn print_source_context(source: SourceCode, line_index: usize, char_pointer:
 }
 
 
-pub fn io_error(err: io::Error) -> ! {
-    eprintln!("IO error: {}", err);
+pub fn io_error(err: io::Error, message: &str) -> ! {
+    eprintln!("IO error: {err}\n{message}");
     std::process::exit(1);
 }
 
@@ -97,9 +97,9 @@ pub fn invalid_argument(token: &SourceToken, source: SourceCode, message: &str) 
 }
 
 
-pub fn undefined_symbol(token: &SourceToken, source: SourceCode, symbol_name: &str) -> ! {
+pub fn undefined_symbol(token: &SourceToken, source: SourceCode) -> ! {
     eprintln!("Assembly unit \"{}\"", token.unit_path.display());
-    eprintln!("Undefined symbol at {}:{}: `{}`", token.line_number(), token.column, symbol_name);
+    eprintln!("Undefined symbol at {}:{}: `{}`", token.line_number(), token.column, token.string);
 
     print_source_context(source, token.line_index, token.column);
 

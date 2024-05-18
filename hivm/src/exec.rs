@@ -514,7 +514,6 @@ impl VM {
                     self.opstack.push_8(program.virtual_to_real(vsrc) as u64);
                 },
                 ByteCodes::VirtualToReal => {
-                    // TODO: here we could avoid popping and pushing the stack pointer by directly writing to the stack.
                     let vsrc = VirtualAddress(self.opstack.pop_8() as Address);
                     self.opstack.push_8(program.virtual_to_real(vsrc) as u64);
                 }

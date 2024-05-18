@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use hivmlib::ByteCodes;
 
-use crate::tokenizer::{SourceCode, Token, TokenList, TokenValue};
-use crate::symbol_table::SymbolTable;
+use crate::tokenizer::{SourceCode, SourceToken, Token, TokenList, TokenValue};
+use crate::symbol_table::{SymbolID, SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmValue, Number, NumberLike};
 use crate::errors;
 
@@ -22,7 +25,7 @@ use crate::errors;
 // }
 
 
-fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, source: SourceCode) -> Vec<AsmOperand<'a>> {
+fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, source: SourceCode) -> Box<[AsmOperand<'a>]> {
     
     // TODO: implement in-line constant math and eventual in-line operators.
 
@@ -73,6 +76,21 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
 
                 push_op!(symbol_value, token);              
             },
+
+            TokenValue::Bang => {
+                i += 1;
+
+                let next_token = tokens.get(i).unwrap_or_else(
+                    || errors::parsing_error(&token.source, source, "Missing macro symbol name after `!`."));
+
+                let symbol_id = if let TokenValue::Identifier(id) = next_token.value {
+                    id
+                } else {
+                    errors::parsing_error(&next_token.source, source, "Expected a macro symbol name after `!`.")
+                };
+
+                push_op!(AsmValue::MacroSymbol(symbol_id), token);
+            },
             
             TokenValue::Plus => todo!(),
             TokenValue::Minus => todo!(),
@@ -82,15 +100,463 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
             TokenValue::Instruction(_) |
             TokenValue::Dot |
             TokenValue::At |
-            TokenValue::Colon 
+            TokenValue::Colon |
+            TokenValue::EndMacro
                 => errors::parsing_error(&token.source, source, "Token cannot be used as an operand.")
         }
 
         i += 1;
     }
 
-    operands.shrink_to_fit();
-    operands
+    operands.into_boxed_slice()
+}
+
+
+struct MacroDef<'a> {
+    args: Box<[SymbolID]>,
+    definition_location: Rc<SourceToken<'a>>,
+    body: Box<[(&'a Token<'a>, Box<[AsmOperand<'a>]>)]>
+}
+
+
+type MacroMap<'a> = HashMap<SymbolID, MacroDef<'a>>;
+
+
+fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>, nodes: &mut Vec<AsmNode<'a>>, macros: &mut MacroMap<'a>, token_lines: &'a [TokenList<'a>], line_index: &mut usize, source: SourceCode, symbol_table: &'a SymbolTable<'a>) {
+
+    // Handle an eventual macro call and expand it
+    if matches!(main_operator.value, TokenValue::Bang) {
+        let macro_name = operands.first().unwrap_or_else(
+            || errors::parsing_error(&main_operator.source, source, "Macro call must have a macro name after the !.")
+        );
+
+        let macro_id = if let AsmValue::Symbol(id) = macro_name.value {
+            id
+        } else {
+            errors::parsing_error(&macro_name.source, source, "Expected a symbol as macro name.")
+        };
+
+        let macro_def = macros.get(&macro_id).unwrap_or_else(
+            || errors::undefined_symbol(&macro_name.source, source));
+
+        // Skip the macro name
+        let operands = &operands[1..];
+
+        if operands.len() != macro_def.args.len() {
+            errors::parsing_error(&main_operator.source, source, format!("Macro call has wrong number of arguments. Expected {}, got {}.", macro_def.args.len(), operands.len()).as_str());
+        }
+
+        let mut macro_args = HashMap::new();
+
+        for (arg, param) in operands.iter().zip(macro_def.args.iter()) {
+            macro_args.insert(*param, arg);
+        }
+
+        // Expand the macro
+
+        let mut expanded_macro = Vec::with_capacity(macro_def.body.len());
+
+        // TODO: maybe eventually use a Cow to avoid useless cloning
+        for (body_line_main_operator, raw_body_line_operands) in macro_def.body.iter() {
+            
+            let mut body_line_operands: Vec<AsmOperand> = Vec::with_capacity(raw_body_line_operands.len());
+            for op in raw_body_line_operands.iter() {
+                body_line_operands.push(
+                    if let AsmValue::MacroSymbol(id) = op.value {
+                        (*macro_args.get(&id).unwrap_or_else(
+                            || errors::parsing_error(&op.source, source, "Macro symbol not found.")
+                        )).clone()
+                    } else {
+                        op.clone()
+                    }
+                )
+            }
+
+            expanded_macro.push((*body_line_main_operator, body_line_operands.into_boxed_slice()));
+        }
+
+        // Once the macro is expanded, parse it normally
+        for (main_operator, operands) in expanded_macro {
+            parse_line(main_operator, operands, nodes, macros, token_lines, line_index, source, symbol_table);
+        }
+
+        // The macro has been expanded and parsed, there's nothing more to do
+        return;
+    }
+
+    match main_operator.value {
+
+        TokenValue::At => {
+            if operands.len() != 1 {
+                errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+            }
+
+            let op = &operands[0];
+            let symbol_id = if let AsmValue::Symbol(id) = op.value {
+                id
+            } else {
+                errors::parsing_error(&op.source, source, "Expected a symbol as label name.");
+            };
+
+            let symbol = symbol_table.get_symbol(symbol_id).borrow();
+
+            // Disallow defining a label more than once.
+            if symbol.value.is_some() {
+                errors::symbol_redeclaration(&op.source, source, &symbol);
+            }
+
+            nodes.push(AsmNode { 
+                value: AsmNodeValue::Label(symbol.source.string),
+                source: main_operator.source.clone()
+            });
+            
+            // Mark the label as declared at this location in the source code. No further declarations of the same label are allowed.
+            // Leave the value as None since its location in the binary is not known yet. It will be resolved when the binary is generated.
+            symbol_table.define_symbol(symbol_id, None, op.source.clone());
+        },
+
+        TokenValue::Mod => {
+
+            // Syntax: %macro_name arg1, arg2, arg3, ...
+            // ...
+            // %endmacro
+
+            let macro_name = operands.first().unwrap_or_else(
+                || errors::parsing_error(&main_operator.source, source, "Macro declaration must have a name after the %.")
+            );
+
+            let macro_id = if let AsmValue::Symbol(id) = macro_name.value {
+                id
+            } else {
+                errors::parsing_error(&macro_name.source, source, "Expected a symbol as macro name.")
+            };
+
+            let params: Vec<SymbolID> = operands[1..].iter().map(|op| {
+                if let AsmValue::Symbol(id) = op.value {
+                    id
+                } else {
+                    errors::parsing_error(&op.source, source, "Expected a symbol as macro parametr.")
+                }
+            }).collect();
+
+            // Get the macro body
+
+            let mut body = Vec::new();
+            
+            loop {
+                
+                *line_index += 1;
+
+                let line = token_lines.get(*line_index).unwrap_or_else(
+                    || errors::parsing_error(&main_operator.source, source, "Macro definition must end with `%endmacro`."));
+                
+                let body_main_operator = &line[0];
+                let body_operands = parse_operands(&line[1..], symbol_table, source);
+                
+                if matches!(body_main_operator.value, TokenValue::EndMacro) {
+                    break;
+                }
+
+                body.push((body_main_operator, body_operands));
+
+            }
+
+            if macros.insert(macro_id, MacroDef {
+                args: params.into_boxed_slice(),
+                definition_location: main_operator.source.clone(),
+                body: body.into_boxed_slice()
+            }).is_some() {
+                // Disallow redefining a macro.
+                errors::symbol_redeclaration(&main_operator.source, source, &symbol_table.get_symbol(macro_id).borrow());
+            }
+        },
+
+        TokenValue::Dot => {
+            if operands.len() != 1 {
+                errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+            }
+
+            let op = &operands[0];
+            let symbol_id = if let AsmValue::Symbol(id) = op.value {
+                id
+            } else {
+                errors::parsing_error(&op.source, source, "Expected a symbol as section name.");
+            };
+
+            { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
+                let symbol = symbol_table.get_symbol(symbol_id).borrow();
+
+                if symbol.value.is_some() {
+                    errors::symbol_redeclaration(&op.source, source, &symbol);
+                }
+                
+                nodes.push(AsmNode {
+                    value: AsmNodeValue::Section(symbol.source.string),
+                    source: main_operator.source.clone()
+                });
+            }
+            
+            // Mark this section name as declared at this source code location.
+            symbol_table.define_symbol(symbol_id, None, main_operator.source.clone());
+        },
+
+        TokenValue::Instruction(code) => {
+
+            macro_rules! no_args_instruction {
+                ($name:ident) => {{
+                    if !operands.is_empty() {
+                        errors::parsing_error(&main_operator.source, source, "Operator expects no arguments.");
+                    }
+                    nodes.push(AsmNode { 
+                        value: AsmNodeValue::Instruction(AsmInstruction::$name),
+                        source: main_operator.source.clone()
+                    });
+                }}
+            }
+
+            macro_rules! one_arg_numeric_instruction {
+                ($name:ident) => {{
+                    if operands.len() != 1 {
+                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+                    }
+
+                    let op = &operands[0];
+                    let val = match &op.value {
+                        AsmValue::Const(n) => NumberLike::from_number(n),
+                        AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                        AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+                       
+                        AsmValue::StringLiteral(_)
+                            => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
+
+                        AsmValue::MacroSymbol(_)
+                            => errors::parsing_error(&op.source, source, "Macro symbol outside of a macro.")
+                    };
+
+                    nodes.push(AsmNode { 
+                        value: AsmNodeValue::Instruction(AsmInstruction::$name { value: (val, op.source.clone()) }),
+                        source: main_operator.source.clone()
+                    });
+                }}
+            }
+
+            macro_rules! one_arg_address_instruction {
+                ($name:ident) => {{
+                    if operands.len() != 1 {
+                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+                    }
+
+                    let op = &operands[0];
+                    let val = match &op.value {
+                        AsmValue::Const(n) => AddressLike::Number(n.clone()),
+                        AsmValue::CurrentPosition => AddressLike::CurrentPosition,
+                        AsmValue::Symbol(id) => AddressLike::Symbol(*id),
+                       
+                        AsmValue::StringLiteral(_)
+                            => errors::parsing_error(&op.source, source, "Expected an address value, got a string literal."),
+
+                        AsmValue::MacroSymbol(_)
+                            => errors::parsing_error(&op.source, source, "Macro symbol outside of a macro.")
+                    };
+
+                    nodes.push(AsmNode {
+                        value: AsmNodeValue::Instruction(AsmInstruction::$name { addr: (val, op.source.clone()) }),
+                        source: main_operator.source.clone()
+                    });
+                }}
+            }
+
+            match code {
+                ByteCodes::AddInt1 => no_args_instruction!(AddInt1),
+                ByteCodes::AddInt2 => no_args_instruction!(AddInt2),
+                ByteCodes::AddInt4 => no_args_instruction!(AddInt4),
+                ByteCodes::AddInt8 => no_args_instruction!(AddInt8),
+                ByteCodes::SubInt1 => no_args_instruction!(SubInt1),
+                ByteCodes::SubInt2 => no_args_instruction!(SubInt2),
+                ByteCodes::SubInt4 => no_args_instruction!(SubInt4),
+                ByteCodes::SubInt8 => no_args_instruction!(SubInt8),
+                ByteCodes::MulInt1 => no_args_instruction!(MulInt1),
+                ByteCodes::MulInt2 => no_args_instruction!(MulInt2),
+                ByteCodes::MulInt4 => no_args_instruction!(MulInt4),
+                ByteCodes::MulInt8 => no_args_instruction!(MulInt8),
+                ByteCodes::DivInt1 => no_args_instruction!(DivInt1),
+                ByteCodes::DivInt2 => no_args_instruction!(DivInt2),
+                ByteCodes::DivInt4 => no_args_instruction!(DivInt4),
+                ByteCodes::DivInt8 => no_args_instruction!(DivInt8),
+                ByteCodes::ModInt1 => no_args_instruction!(ModInt1),
+                ByteCodes::ModInt2 => no_args_instruction!(ModInt2),
+                ByteCodes::ModInt4 => no_args_instruction!(ModInt4),
+                ByteCodes::ModInt8 => no_args_instruction!(ModInt8),
+                ByteCodes::AddFloat4 => no_args_instruction!(AddFloat4),
+                ByteCodes::AddFloat8 => no_args_instruction!(AddFloat8),
+                ByteCodes::SubFloat4 => no_args_instruction!(SubFloat4),
+                ByteCodes::SubFloat8 => no_args_instruction!(SubFloat8),
+                ByteCodes::MulFloat4 => no_args_instruction!(MulFloat4),
+                ByteCodes::MulFloat8 => no_args_instruction!(MulFloat8),
+                ByteCodes::DivFloat4 => no_args_instruction!(DivFloat4),
+                ByteCodes::DivFloat8 => no_args_instruction!(DivFloat8),
+                ByteCodes::ModFloat4 => no_args_instruction!(ModFloat4),
+                ByteCodes::ModFloat8 => no_args_instruction!(ModFloat8),
+                ByteCodes::LoadStatic1 => one_arg_address_instruction!(LoadStatic1),
+                ByteCodes::LoadStatic2 => one_arg_address_instruction!(LoadStatic2),
+                ByteCodes::LoadStatic4 => one_arg_address_instruction!(LoadStatic4),
+                ByteCodes::LoadStatic8 => one_arg_address_instruction!(LoadStatic8),
+
+                ByteCodes::LoadStaticBytes => {
+                    if operands.len() != 2 {
+                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly two arguments.");
+                    }
+
+                    let addr_op = &operands[0];
+                    let addr = match &addr_op.value {
+                        AsmValue::Const(n) => AddressLike::Number(n.clone()),
+                        AsmValue::CurrentPosition => AddressLike::CurrentPosition,
+                        AsmValue::Symbol(id) => AddressLike::Symbol(*id),
+                       
+                        AsmValue::StringLiteral(_)
+                            => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
+                        
+                        AsmValue::MacroSymbol(_)
+                            => errors::parsing_error(&addr_op.source, source, "Macro symbol outside of a macro.")
+                    };
+
+                    let count_op = &operands[1];
+                    let count = match &count_op.value {
+                        AsmValue::Const(n) => NumberLike::from_number(n),
+                        AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                        AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+                       
+                        AsmValue::StringLiteral(_)
+                            => errors::parsing_error(&count_op.source, source, "Expected a numeric value, got a string literal."),
+
+                        AsmValue::MacroSymbol(_)
+                            => errors::parsing_error(&count_op.source, source, "Macro symbol outside of a macro.")
+                    };
+
+                    nodes.push(AsmNode {
+                        value: AsmNodeValue::Instruction(AsmInstruction::LoadStaticBytes { addr: (addr, addr_op.source.clone()), count: (count, count_op.source.clone()) }),
+                        source: main_operator.source.clone()
+                    });
+                },
+
+                ByteCodes::LoadConst1 => one_arg_numeric_instruction!(LoadConst1),
+                ByteCodes::LoadConst2 => one_arg_numeric_instruction!(LoadConst2),
+                ByteCodes::LoadConst4 => one_arg_numeric_instruction!(LoadConst4),
+                ByteCodes::LoadConst8 => one_arg_numeric_instruction!(LoadConst8),
+
+                ByteCodes::LoadConstBytes => {
+                    let mut bytes = Vec::with_capacity(operands.len());
+
+                    for op in operands.iter() {
+                        let val = match &op.value {
+                            AsmValue::Const(n) => NumberLike::from_number(n),
+                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+
+                            AsmValue::StringLiteral(_)
+                                => errors::parsing_error(&op.source, source, "Expected a byte value, got a string literal."),
+
+                            AsmValue::MacroSymbol(_)
+                                => errors::parsing_error(&op.source, source, "Macro symbol outside of a macro.")
+                        };
+
+                        bytes.push((val, op.source.clone()));
+                    }
+
+                    nodes.push(AsmNode {
+                        value: AsmNodeValue::Instruction(AsmInstruction::LoadConstBytes { bytes }),
+                        source: main_operator.source.clone()
+                    });
+                },
+
+                ByteCodes::Load1 => no_args_instruction!(Load1),
+                ByteCodes::Load2 => no_args_instruction!(Load2),
+                ByteCodes::Load4 => no_args_instruction!(Load4),
+                ByteCodes::Load8 => no_args_instruction!(Load8),
+                ByteCodes::LoadBytes => no_args_instruction!(LoadBytes),
+                ByteCodes::VirtualConstToReal => one_arg_address_instruction!(VirtualConstToReal),
+                ByteCodes::VirtualToReal => no_args_instruction!(VirtualToReal),
+                ByteCodes::Store1 => no_args_instruction!(Store1),
+                ByteCodes::Store2 => no_args_instruction!(Store2),
+                ByteCodes::Store4 => no_args_instruction!(Store4),
+                ByteCodes::Store8 => no_args_instruction!(Store8),
+                ByteCodes::StoreBytes => no_args_instruction!(StoreBytes),
+                ByteCodes::Memmove1 => no_args_instruction!(Memmove1),
+                ByteCodes::Memmove2 => no_args_instruction!(Memmove2),
+                ByteCodes::Memmove4 => no_args_instruction!(Memmove4),
+                ByteCodes::Memmove8 => no_args_instruction!(Memmove8),
+                ByteCodes::MemmoveBytes => no_args_instruction!(MemmoveBytes),
+                ByteCodes::Duplicate1 => no_args_instruction!(Duplicate1),
+                ByteCodes::Duplicate2 => no_args_instruction!(Duplicate2),
+                ByteCodes::Duplicate4 => no_args_instruction!(Duplicate4),
+                ByteCodes::Duplicate8 => no_args_instruction!(Duplicate8),
+                ByteCodes::DuplicateBytes => no_args_instruction!(DuplicateBytes),
+                ByteCodes::Malloc => no_args_instruction!(Malloc),
+                ByteCodes::Realloc => no_args_instruction!(Realloc),
+                ByteCodes::Free => no_args_instruction!(Free),
+                ByteCodes::Intr => no_args_instruction!(Intr),
+                ByteCodes::IntrConst => {
+                    if operands.len() != 1 {
+                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
+                    }
+
+                    let op = &operands[0];
+                    let val = match &op.value {
+                        AsmValue::Const(n) => NumberLike::from_number(n),
+                        AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                        AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+                       
+                        AsmValue::StringLiteral(_)
+                            => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
+
+                        AsmValue::MacroSymbol(_)
+                            => errors::parsing_error(&op.source, source, "Macro symbol outside of a macro.")
+                    };
+
+                    nodes.push(AsmNode {
+                        value: AsmNodeValue::Instruction(AsmInstruction::IntrConst { code: (val, op.source.clone()) }),
+                        source: main_operator.source.clone()
+                    });
+                },
+                ByteCodes::Exit => no_args_instruction!(Exit),
+                ByteCodes::JumpConst => one_arg_address_instruction!(JumpConst),
+                ByteCodes::Jump => no_args_instruction!(Jump),
+                ByteCodes::JumpNotZeroConst1 => one_arg_address_instruction!(JumpNotZeroConst1),
+                ByteCodes::JumpNotZeroConst2 => one_arg_address_instruction!(JumpNotZeroConst2),
+                ByteCodes::JumpNotZeroConst4 => one_arg_address_instruction!(JumpNotZeroConst4),
+                ByteCodes::JumpNotZeroConst8 => one_arg_address_instruction!(JumpNotZeroConst8),
+                ByteCodes::JumpNotZero1 => no_args_instruction!(JumpNotZero1),
+                ByteCodes::JumpNotZero2 => no_args_instruction!(JumpNotZero2),
+                ByteCodes::JumpNotZero4 => no_args_instruction!(JumpNotZero4),
+                ByteCodes::JumpNotZero8 => no_args_instruction!(JumpNotZero8),
+                ByteCodes::JumpZeroConst1 => one_arg_address_instruction!(JumpZeroConst1),
+                ByteCodes::JumpZeroConst2 => one_arg_address_instruction!(JumpZeroConst2),
+                ByteCodes::JumpZeroConst4 => one_arg_address_instruction!(JumpZeroConst4),
+                ByteCodes::JumpZeroConst8 => one_arg_address_instruction!(JumpZeroConst8),
+                ByteCodes::JumpZero1 => no_args_instruction!(JumpZero1),
+                ByteCodes::JumpZero2 => no_args_instruction!(JumpZero2),
+                ByteCodes::JumpZero4 => no_args_instruction!(JumpZero4),
+                ByteCodes::JumpZero8 => no_args_instruction!(JumpZero8),
+                ByteCodes::Nop => no_args_instruction!(Nop),
+            }
+        },
+
+        TokenValue::Bang => unreachable!("Handled before the match statement."),
+        
+        TokenValue::Number(_) |
+        TokenValue::Identifier(_) |
+        TokenValue::Dollar |
+        TokenValue::Plus |
+        TokenValue::Minus |
+        TokenValue::Star |
+        TokenValue::Div |
+        TokenValue::StringLiteral(_) |
+        TokenValue::CharLiteral(_) |
+        TokenValue::Colon |
+        TokenValue::EndMacro
+            => errors::parsing_error(&main_operator.source, source, "Token cannot be used as a main operator.")
+    }
+    
 }
 
 
@@ -100,14 +566,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
     // usually translates to a single instruction. This should avoid reallocations in most cases.
     let mut nodes = Vec::with_capacity(token_lines.len());
 
+    let mut macros = MacroMap::new();
+
     let mut i: usize = 0;
 
-    macro_rules! next_line {
-        () => {
-            i += 1;
-            continue;
-        };
-    }
 
     while let Some(line) = token_lines.get(i) {
 
@@ -117,306 +579,10 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
 
         let operands = parse_operands(&line[1..], symbol_table, source);
 
-        match main_operator.value {
+        parse_line(main_operator, operands, &mut nodes, &mut macros, token_lines, &mut i, source, symbol_table);
 
-            TokenValue::At => {
-                if operands.len() != 1 {
-                    errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                }
-
-                let op = &operands[0];
-                let symbol_id = if let AsmValue::Symbol(id) = op.value {
-                    id
-                } else {
-                    errors::parsing_error(&op.source, source, "Expected a symbol as label name.");
-                };
-
-                let symbol = symbol_table.get_symbol(symbol_id).borrow();
-
-                // Disallow defining a label more than once.
-                if symbol.value.is_some() {
-                    errors::symbol_redeclaration(&op.source, source, &symbol);
-                }
-
-                nodes.push(AsmNode { 
-                    value: AsmNodeValue::Label(symbol.source.string),
-                    source: main_operator.source.clone()
-                });
-                
-                // Mark the label as declared at this location in the source code. No further declarations of the same label are allowed.
-                // Leave the value as None since its location in the binary is not known yet. It will be resolved when the binary is generated.
-                symbol_table.define_symbol(symbol_id, None, op.source.clone());
-            },
-
-            TokenValue::Mod => todo!(),
-
-            TokenValue::Dot => {
-                if operands.len() != 1 {
-                    errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                }
-
-                let op = &operands[0];
-                let symbol_id = if let AsmValue::Symbol(id) = op.value {
-                    id
-                } else {
-                    errors::parsing_error(&op.source, source, "Expected a symbol as section name.");
-                };
-
-                { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
-                    let symbol = symbol_table.get_symbol(symbol_id).borrow();
-
-                    if symbol.value.is_some() {
-                        errors::symbol_redeclaration(&op.source, source, &symbol);
-                    }
-                    
-                    nodes.push(AsmNode {
-                        value: AsmNodeValue::Section(symbol.source.string),
-                        source: main_operator.source.clone()
-                    });
-                }
-                
-                // Mark this section name as declared at this source code location.
-                symbol_table.define_symbol(symbol_id, None, main_operator.source.clone());
-            },
-
-            TokenValue::Instruction(code) => {
-
-                macro_rules! no_args_instruction {
-                    ($name:ident) => {{
-                        if !operands.is_empty() {
-                            errors::parsing_error(&main_operator.source, source, "Operator expects no arguments.");
-                        }
-                        nodes.push(AsmNode { 
-                            value: AsmNodeValue::Instruction(AsmInstruction::$name),
-                            source: main_operator.source.clone()
-                        });
-                    }}
-                }
-
-                macro_rules! one_arg_numeric_instruction {
-                    ($name:ident) => {{
-                        if operands.len() != 1 {
-                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                        }
-
-                        let op = &operands[0];
-                        let val = match &op.value {
-                            AsmValue::Const(n) => NumberLike::from_number(n),
-                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
-                           
-                            AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
-                        };
-
-                        nodes.push(AsmNode { 
-                            value: AsmNodeValue::Instruction(AsmInstruction::$name { value: (val, op.source.clone()) }),
-                            source: main_operator.source.clone()
-                        });
-                    }}
-                }
-
-                macro_rules! one_arg_address_instruction {
-                    ($name:ident) => {{
-                        if operands.len() != 1 {
-                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                        }
-
-                        let op = &operands[0];
-                        let val = match &op.value {
-                            AsmValue::Const(n) => AddressLike::Number(n.clone()),
-                            AsmValue::CurrentPosition => AddressLike::CurrentPosition,
-                            AsmValue::Symbol(id) => AddressLike::Symbol(*id),
-                           
-                            AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&op.source, source, "Expected an address value, got a string literal."),
-                        };
-
-                        nodes.push(AsmNode {
-                            value: AsmNodeValue::Instruction(AsmInstruction::$name { addr: (val, op.source.clone()) }),
-                            source: main_operator.source.clone()
-                        });
-                    }}
-                }
-
-                match code {
-                    ByteCodes::AddInt1 => no_args_instruction!(AddInt1),
-                    ByteCodes::AddInt2 => no_args_instruction!(AddInt2),
-                    ByteCodes::AddInt4 => no_args_instruction!(AddInt4),
-                    ByteCodes::AddInt8 => no_args_instruction!(AddInt8),
-                    ByteCodes::SubInt1 => no_args_instruction!(SubInt1),
-                    ByteCodes::SubInt2 => no_args_instruction!(SubInt2),
-                    ByteCodes::SubInt4 => no_args_instruction!(SubInt4),
-                    ByteCodes::SubInt8 => no_args_instruction!(SubInt8),
-                    ByteCodes::MulInt1 => no_args_instruction!(MulInt1),
-                    ByteCodes::MulInt2 => no_args_instruction!(MulInt2),
-                    ByteCodes::MulInt4 => no_args_instruction!(MulInt4),
-                    ByteCodes::MulInt8 => no_args_instruction!(MulInt8),
-                    ByteCodes::DivInt1 => no_args_instruction!(DivInt1),
-                    ByteCodes::DivInt2 => no_args_instruction!(DivInt2),
-                    ByteCodes::DivInt4 => no_args_instruction!(DivInt4),
-                    ByteCodes::DivInt8 => no_args_instruction!(DivInt8),
-                    ByteCodes::ModInt1 => no_args_instruction!(ModInt1),
-                    ByteCodes::ModInt2 => no_args_instruction!(ModInt2),
-                    ByteCodes::ModInt4 => no_args_instruction!(ModInt4),
-                    ByteCodes::ModInt8 => no_args_instruction!(ModInt8),
-                    ByteCodes::AddFloat4 => no_args_instruction!(AddFloat4),
-                    ByteCodes::AddFloat8 => no_args_instruction!(AddFloat8),
-                    ByteCodes::SubFloat4 => no_args_instruction!(SubFloat4),
-                    ByteCodes::SubFloat8 => no_args_instruction!(SubFloat8),
-                    ByteCodes::MulFloat4 => no_args_instruction!(MulFloat4),
-                    ByteCodes::MulFloat8 => no_args_instruction!(MulFloat8),
-                    ByteCodes::DivFloat4 => no_args_instruction!(DivFloat4),
-                    ByteCodes::DivFloat8 => no_args_instruction!(DivFloat8),
-                    ByteCodes::ModFloat4 => no_args_instruction!(ModFloat4),
-                    ByteCodes::ModFloat8 => no_args_instruction!(ModFloat8),
-                    ByteCodes::LoadStatic1 => one_arg_address_instruction!(LoadStatic1),
-                    ByteCodes::LoadStatic2 => one_arg_address_instruction!(LoadStatic2),
-                    ByteCodes::LoadStatic4 => one_arg_address_instruction!(LoadStatic4),
-                    ByteCodes::LoadStatic8 => one_arg_address_instruction!(LoadStatic8),
-
-                    ByteCodes::LoadStaticBytes => {
-                        if operands.len() != 2 {
-                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly two arguments.");
-                        }
-
-                        let addr_op = &operands[0];
-                        let addr = match &addr_op.value {
-                            AsmValue::Const(n) => AddressLike::Number(n.clone()),
-                            AsmValue::CurrentPosition => AddressLike::CurrentPosition,
-                            AsmValue::Symbol(id) => AddressLike::Symbol(*id),
-                           
-                            AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
-                        };
-
-                        let count_op = &operands[1];
-                        let count = match &count_op.value {
-                            AsmValue::Const(n) => NumberLike::from_number(n),
-                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
-                           
-                            AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&count_op.source, source, "Expected a numeric value, got a string literal."),
-                        };
-
-                        nodes.push(AsmNode {
-                            value: AsmNodeValue::Instruction(AsmInstruction::LoadStaticBytes { addr: (addr, addr_op.source.clone()), count: (count, count_op.source.clone()) }),
-                            source: main_operator.source.clone()
-                        });
-                    },
-
-                    ByteCodes::LoadConst1 => one_arg_numeric_instruction!(LoadConst1),
-                    ByteCodes::LoadConst2 => one_arg_numeric_instruction!(LoadConst2),
-                    ByteCodes::LoadConst4 => one_arg_numeric_instruction!(LoadConst4),
-                    ByteCodes::LoadConst8 => one_arg_numeric_instruction!(LoadConst8),
-
-                    ByteCodes::LoadConstBytes => {
-                        let mut bytes = Vec::with_capacity(operands.len());
-
-                        for op in operands {
-                            let val = match op.value {
-                                AsmValue::Const(n) => NumberLike::from_number(&n),
-                                AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                                AsmValue::Symbol(id) => NumberLike::Symbol(id),
-
-                                AsmValue::StringLiteral(_)
-                                    => errors::parsing_error(&op.source, source, "Expected a byte value, got a string literal."),
-                            };
-
-                            bytes.push((val, op.source.clone()));
-                        }
-
-                        nodes.push(AsmNode {
-                            value: AsmNodeValue::Instruction(AsmInstruction::LoadConstBytes { bytes }),
-                            source: main_operator.source.clone()
-                        });
-                    },
-
-                    ByteCodes::Load1 => no_args_instruction!(Load1),
-                    ByteCodes::Load2 => no_args_instruction!(Load2),
-                    ByteCodes::Load4 => no_args_instruction!(Load4),
-                    ByteCodes::Load8 => no_args_instruction!(Load8),
-                    ByteCodes::LoadBytes => no_args_instruction!(LoadBytes),
-                    ByteCodes::VirtualConstToReal => one_arg_address_instruction!(VirtualConstToReal),
-                    ByteCodes::VirtualToReal => no_args_instruction!(VirtualToReal),
-                    ByteCodes::Store1 => no_args_instruction!(Store1),
-                    ByteCodes::Store2 => no_args_instruction!(Store2),
-                    ByteCodes::Store4 => no_args_instruction!(Store4),
-                    ByteCodes::Store8 => no_args_instruction!(Store8),
-                    ByteCodes::StoreBytes => no_args_instruction!(StoreBytes),
-                    ByteCodes::Memmove1 => no_args_instruction!(Memmove1),
-                    ByteCodes::Memmove2 => no_args_instruction!(Memmove2),
-                    ByteCodes::Memmove4 => no_args_instruction!(Memmove4),
-                    ByteCodes::Memmove8 => no_args_instruction!(Memmove8),
-                    ByteCodes::MemmoveBytes => no_args_instruction!(MemmoveBytes),
-                    ByteCodes::Duplicate1 => no_args_instruction!(Duplicate1),
-                    ByteCodes::Duplicate2 => no_args_instruction!(Duplicate2),
-                    ByteCodes::Duplicate4 => no_args_instruction!(Duplicate4),
-                    ByteCodes::Duplicate8 => no_args_instruction!(Duplicate8),
-                    ByteCodes::DuplicateBytes => no_args_instruction!(DuplicateBytes),
-                    ByteCodes::Malloc => no_args_instruction!(Malloc),
-                    ByteCodes::Realloc => no_args_instruction!(Realloc),
-                    ByteCodes::Free => no_args_instruction!(Free),
-                    ByteCodes::Intr => no_args_instruction!(Intr),
-                    ByteCodes::IntrConst => {
-                        if operands.len() != 1 {
-                            errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                        }
-
-                        let op = &operands[0];
-                        let val = match &op.value {
-                            AsmValue::Const(n) => NumberLike::from_number(n),
-                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
-                           
-                            AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
-                        };
-
-                        nodes.push(AsmNode {
-                            value: AsmNodeValue::Instruction(AsmInstruction::IntrConst { code: (val, op.source.clone()) }),
-                            source: main_operator.source.clone()
-                        });
-                    },
-                    ByteCodes::Exit => no_args_instruction!(Exit),
-                    ByteCodes::JumpConst => one_arg_address_instruction!(JumpConst),
-                    ByteCodes::Jump => no_args_instruction!(Jump),
-                    ByteCodes::JumpNotZeroConst1 => one_arg_address_instruction!(JumpNotZeroConst1),
-                    ByteCodes::JumpNotZeroConst2 => one_arg_address_instruction!(JumpNotZeroConst2),
-                    ByteCodes::JumpNotZeroConst4 => one_arg_address_instruction!(JumpNotZeroConst4),
-                    ByteCodes::JumpNotZeroConst8 => one_arg_address_instruction!(JumpNotZeroConst8),
-                    ByteCodes::JumpNotZero1 => no_args_instruction!(JumpNotZero1),
-                    ByteCodes::JumpNotZero2 => no_args_instruction!(JumpNotZero2),
-                    ByteCodes::JumpNotZero4 => no_args_instruction!(JumpNotZero4),
-                    ByteCodes::JumpNotZero8 => no_args_instruction!(JumpNotZero8),
-                    ByteCodes::JumpZeroConst1 => one_arg_address_instruction!(JumpZeroConst1),
-                    ByteCodes::JumpZeroConst2 => one_arg_address_instruction!(JumpZeroConst2),
-                    ByteCodes::JumpZeroConst4 => one_arg_address_instruction!(JumpZeroConst4),
-                    ByteCodes::JumpZeroConst8 => one_arg_address_instruction!(JumpZeroConst8),
-                    ByteCodes::JumpZero1 => no_args_instruction!(JumpZero1),
-                    ByteCodes::JumpZero2 => no_args_instruction!(JumpZero2),
-                    ByteCodes::JumpZero4 => no_args_instruction!(JumpZero4),
-                    ByteCodes::JumpZero8 => no_args_instruction!(JumpZero8),
-                    ByteCodes::Nop => no_args_instruction!(Nop),
-                }
-            },
-
-            
-            TokenValue::Number(_) |
-            TokenValue::Identifier(_) |
-            TokenValue::Dollar |
-            TokenValue::Plus |
-            TokenValue::Minus |
-            TokenValue::Star |
-            TokenValue::Div |
-            TokenValue::StringLiteral(_) |
-            TokenValue::CharLiteral(_) |
-            TokenValue::Colon
-                => errors::parsing_error(&main_operator.source, source, "Token cannot be used as a main operator.")
-        }
-        
-        next_line!();
+        // Next line
+        i += 1;
     }
 
     nodes.shrink_to_fit();

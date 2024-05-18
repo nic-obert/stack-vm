@@ -1,7 +1,11 @@
 
+%int code
+    intrconst !code
+%endmacro
+
 .text
 
     loadconst4 90
-    intrconst 2
+    !int 2
     
 

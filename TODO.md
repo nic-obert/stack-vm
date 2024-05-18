@@ -6,19 +6,21 @@ Project Description
 
 ### Todo
 
+- [ ] implement value definition macros  
+- [ ] write a disassembler  
 - [ ] write assembly documentation  
-- [ ] implement macros  
 - [ ] implement a primitive assembly module system like #include in C  
 - [ ] implement in-place math in assembly for constants  
-- [ ] implement io interface through interrupts  
-- [ ] differentiate an optimized execution function and a safe execution function. the optimized execution function skips some safety checks like memory bounds  
+- [ ] differentiate an optimized vm execution function and a safe execution function. the optimized execution function skips some safety checks like memory bounds  
 - [ ] add verbose mode  
 
 ### In Progress
 
+- [ ] implement io interface through interrupts  
 
 ### Done ✓
 
+- [x] implement macros  
 - [x] add interrupts. some interrupts are predefined, other interrupts cause to jump to a specific memory address and execute from there  
 - [x] we may incur in alignment problems when interpreting random memory addresses as *T. Testing is needed  
 - [x] implement assembly sections  

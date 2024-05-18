@@ -18,7 +18,7 @@ pub type TokenList<'a> = Vec<Token<'a>>;
 lazy_static! {
 
     static ref TOKEN_REGEX: Regex = Regex::new(
-        r#"(?m)'(?:\\'|[^'])*'|"(?:\\"|[^"])*"|[_a-zA-Z]\w*|0x[a-fA-F\d]+|-?\d+[.]\d*|-?[.]?\d+|[-+\/%@#$:.]|\S"#
+        r#"(?m)'(?:\\'|[^'])*'|"(?:\\"|[^"])*"|[_a-zA-Z]\w*|0x[a-fA-F\d]+|-?\d+[.]\d*|-?[.]?\d+|[-+\/%@#$:.!]|\S"#
     ).unwrap();
 
     static ref IDENTIFIER_REGEX: Regex = Regex::new(
@@ -163,6 +163,8 @@ pub enum TokenValue {
     Div,
     Mod,
     Dot,
+    EndMacro,
+    Bang,
 }
 
 impl TokenValue {
@@ -173,7 +175,8 @@ impl TokenValue {
             TokenValue::CharLiteral(_) |
             TokenValue::Number(_) | 
             TokenValue::Identifier(_) |
-            TokenValue::Colon 
+            TokenValue::Colon |
+            TokenValue::EndMacro
                 => TokenBasePriority::None,
 
             TokenValue::Instruction(_) => TokenBasePriority::Instruction,
@@ -189,7 +192,8 @@ impl TokenValue {
 
             TokenValue::Dollar |
             TokenValue::At |
-            TokenValue::Dot
+            TokenValue::Dot |
+            TokenValue::Bang
                 => TokenBasePriority::AsmOperator,
         }
     }
@@ -233,6 +237,8 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
             let token = token_rc.as_ref();
 
             let token_value = match token_rc.string {
+
+                "!" => TokenValue::Bang,
 
                 "." => TokenValue::Dot,
                 
@@ -299,6 +305,17 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
 
                     if let Some(instruction) = ByteCodes::from_string(string) {
                         TokenValue::Instruction(instruction)
+                    
+                    } else if string == "endmacro" {
+                        if let Some(last_token) = current_line.pop() {
+                            if !matches!(last_token.value, TokenValue::Mod) {
+                                errors::parsing_error(token, source, "Expected the macro modifier `%` before the 'endmacro' keyword.")
+                            }
+                        } else {
+                            errors::parsing_error(token, source, "Expected the macro modifier `%` before the 'endmacro' keyword.")
+                        }
+
+                        TokenValue::EndMacro
                         
                     } else if IDENTIFIER_REGEX.is_match(string) {
 

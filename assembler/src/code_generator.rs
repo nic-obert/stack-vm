@@ -307,7 +307,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
     for label in unresolved_labels {
         
         let value = label_map.get(label.name).unwrap_or_else(
-            || errors::undefined_symbol(&label.source, source, label.name)
+            || errors::undefined_symbol(&label.source, source)
         );
 
         bytecode[label.location.0..(label.location.0 + ADDRESS_SIZE)].copy_from_slice(&value.0.to_le_bytes());
