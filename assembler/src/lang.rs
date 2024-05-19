@@ -181,6 +181,10 @@ pub enum AsmInstruction<'a> {
     Intr,
     IntrConst { code: (NumberLike, Rc<SourceToken<'a>>) },
 
+    ReadError,
+    SetErrorConst { value: (NumberLike, Rc<SourceToken<'a>>) },
+    SetError,
+
     Exit,
 
     JumpConst { addr: (AddressLike, Rc<SourceToken<'a>>) },
@@ -201,6 +205,10 @@ pub enum AsmInstruction<'a> {
     JumpZero2,
     JumpZero4,
     JumpZero8,
+    JumpErrorConst { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpError,
+    JumpNoErrorConst { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpNoError,
 
     Nop
 

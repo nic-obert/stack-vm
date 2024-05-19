@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use hivmlib::ByteCodes;
 
-use crate::tokenizer::{SourceCode, SourceToken, Token, TokenList, TokenValue};
+use crate::tokenizer::{SourceCode, Token, TokenList, TokenValue};
 use crate::symbol_table::{SymbolID, SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmValue, Number, NumberLike};
 use crate::errors;
@@ -115,7 +114,6 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
 
 struct MacroDef<'a> {
     args: Box<[SymbolID]>,
-    definition_location: Rc<SourceToken<'a>>,
     body: Box<[(&'a Token<'a>, Box<[AsmOperand<'a>]>)]>
 }
 
@@ -290,7 +288,6 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
 
             if macros.insert(macro_id, MacroDef {
                 args: params.into_boxed_slice(),
-                definition_location: main_operator.source.clone(),
                 body: body.into_boxed_slice()
             }).is_some() {
                 // Disallow redefining a macro.
@@ -545,6 +542,9 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                         source: main_operator.source.clone()
                     });
                 },
+                ByteCodes::ReadError => no_args_instruction!(ReadError),
+                ByteCodes::SetErrorConst => one_arg_numeric_instruction!(SetErrorConst),
+                ByteCodes::SetError => no_args_instruction!(SetError),
                 ByteCodes::Exit => no_args_instruction!(Exit),
                 ByteCodes::JumpConst => one_arg_address_instruction!(JumpConst),
                 ByteCodes::Jump => no_args_instruction!(Jump),
@@ -560,10 +560,14 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 ByteCodes::JumpZeroConst2 => one_arg_address_instruction!(JumpZeroConst2),
                 ByteCodes::JumpZeroConst4 => one_arg_address_instruction!(JumpZeroConst4),
                 ByteCodes::JumpZeroConst8 => one_arg_address_instruction!(JumpZeroConst8),
+                ByteCodes::JumpErrorConst => one_arg_address_instruction!(JumpErrorConst),
+                ByteCodes::JumpNoErrorConst => one_arg_address_instruction!(JumpNoErrorConst),
                 ByteCodes::JumpZero1 => no_args_instruction!(JumpZero1),
                 ByteCodes::JumpZero2 => no_args_instruction!(JumpZero2),
                 ByteCodes::JumpZero4 => no_args_instruction!(JumpZero4),
                 ByteCodes::JumpZero8 => no_args_instruction!(JumpZero8),
+                ByteCodes::JumpError => no_args_instruction!(JumpError),
+                ByteCodes::JumpNoError => no_args_instruction!(JumpNoError),
                 ByteCodes::Nop => no_args_instruction!(Nop),
             }
         },

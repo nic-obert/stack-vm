@@ -18,6 +18,7 @@ fn main() {
 
     let code = vm.run(&bytecode);
 
-    std::process::exit(code);
+    println!("Process exited with code {code}");
+    std::process::exit(code as i32);
 }
 

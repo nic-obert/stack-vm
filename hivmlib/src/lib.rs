@@ -1,4 +1,5 @@
 use std::mem;
+use std::fmt;
 
 use static_assertions::{const_assert, const_assert_eq};
 
@@ -6,6 +7,8 @@ use static_assertions::{const_assert, const_assert_eq};
 pub type Address = usize;
 pub const ADDRESS_SIZE: usize = mem::size_of::<Address>();
 pub const INSTRUCTION_SIZE: usize = 1;
+pub const INTERRUPT_SIZE: usize = 1;
+pub const ERROR_CODE_SIZE: usize = mem::size_of::<i32>();
 
 #[derive(Default)]
 pub struct VirtualAddress(pub Address);
@@ -35,7 +38,7 @@ pub enum ByteCodes {
 }
 
 impl From<u8> for ByteCodes {
-    /// Convert a byte to an intruction code. An invalid interrupt code will result in undefined behavior.
+    /// Convert a byte to an intruction code. An invalid instruction code will result in undefined behavior.
     fn from(byte: u8) -> Self {
         unsafe {
             mem::transmute(byte)
@@ -137,6 +140,10 @@ declare_instructions! {
     Intr intr,
     IntrConst intrconst,
 
+    ReadError readerr,
+    SetErrorConst seterrconst,
+    SetError seterr,
+
     Exit exit,
 
     JumpConst jmpconst,
@@ -158,6 +165,10 @@ declare_instructions! {
     JumpZero2 jz2,
     JumpZero4 jz4,
     JumpZero8 jz8,
+    JumpErrorConst jerrconst,
+    JumpError jerr,
+    JumpNoErrorConst jnoerrconst,
+    JumpNoError jnoerr,
 
     Nop nop
 
@@ -175,6 +186,8 @@ pub enum Interrupts {
     PrintBytes,
     PrintChar,
     PrintString,
+    ReadBytes,
+    ReadAll,
 }
 
 impl From<u8> for Interrupts {
@@ -184,5 +197,49 @@ impl From<u8> for Interrupts {
             mem::transmute(byte)
         }
     }
+}
+
+const_assert_eq!(mem::size_of::<Interrupts>(), INTERRUPT_SIZE);
+
+
+macro_rules! declare_error_codes {
+    ($($name:ident $value:literal),+) => {
+
+/// Identifies a specific internal error
+#[derive(Clone, Copy)]
+#[repr(i32)]
+pub enum ErrorCodes {
+    $($name = $value),+
+}
+
+impl fmt::Display for ErrorCodes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            $(
+                ErrorCodes::$name => write!(f, "{} ({})", stringify!($name), ErrorCodes::$name as i32)
+            ),+
+        }
+    }
+}
+
+impl From<i32> for ErrorCodes {
+    /// An invalid error code results in undefined behavior.
+    fn from(i: i32) -> Self {
+        unsafe {
+            mem::transmute(i)
+        }
+    }
+}
+
+const_assert_eq!(mem::size_of::<ErrorCodes>(), ERROR_CODE_SIZE);
+
+    };
+}
+
+declare_error_codes! {
+    UnexpectedEOF -2,
+    GenericError -1,
+    NoError 0,
+    EOF 1
 }
 

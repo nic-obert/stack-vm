@@ -6,7 +6,7 @@ use crate::{lang::AsmNode, symbol_table::SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNodeValue, Number, NumberLike, ENTRY_SECTION_NAME};
 use crate::tokenizer::{SourceCode, SourceToken};
 
-use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE, INSTRUCTION_SIZE};
+use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE, ERROR_CODE_SIZE, INSTRUCTION_SIZE, INTERRUPT_SIZE};
 
 
 struct UnresolvedLabel<'a> {
@@ -92,7 +92,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                 }
 
                 macro_rules! one_arg_number_instruction {
-                    ($name:ident, $value:ident, $size:literal) => {{
+                    ($name:ident, $value:ident, $size:expr) => {{
 
                         let (bytes, minimum_size) = match &$value.0 {
 
@@ -141,38 +141,44 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                     }};
                 }
 
+                macro_rules! push_op {
+                    ($op:ident) => {
+                        bytecode.push(ByteCodes::$op as u8)
+                    }
+                }
+
 
                 match instruction {
-                    AsmInstruction::AddInt1 => bytecode.push(ByteCodes::AddInt1 as u8),
-                    AsmInstruction::AddInt2 => bytecode.push(ByteCodes::AddInt2 as u8),
-                    AsmInstruction::AddInt4 => bytecode.push(ByteCodes::AddInt4 as u8),
-                    AsmInstruction::AddInt8 => bytecode.push(ByteCodes::AddInt8 as u8),
-                    AsmInstruction::SubInt1 => bytecode.push(ByteCodes::SubInt1 as u8),
-                    AsmInstruction::SubInt2 => bytecode.push(ByteCodes::SubInt2 as u8),
-                    AsmInstruction::SubInt4 => bytecode.push(ByteCodes::SubInt4 as u8),
-                    AsmInstruction::SubInt8 => bytecode.push(ByteCodes::SubInt8 as u8),
-                    AsmInstruction::MulInt1 => bytecode.push(ByteCodes::MulInt1 as u8),
-                    AsmInstruction::MulInt2 => bytecode.push(ByteCodes::MulInt2 as u8),
-                    AsmInstruction::MulInt4 => bytecode.push(ByteCodes::MulInt4 as u8),
-                    AsmInstruction::MulInt8 => bytecode.push(ByteCodes::MulInt8 as u8),
-                    AsmInstruction::DivInt1 => bytecode.push(ByteCodes::DivInt1 as u8),
-                    AsmInstruction::DivInt2 => bytecode.push(ByteCodes::DivInt2 as u8),
-                    AsmInstruction::DivInt4 => bytecode.push(ByteCodes::DivInt4 as u8),
-                    AsmInstruction::DivInt8 => bytecode.push(ByteCodes::DivInt8 as u8),
-                    AsmInstruction::ModInt1 => bytecode.push(ByteCodes::ModInt1 as u8),
-                    AsmInstruction::ModInt2 => bytecode.push(ByteCodes::ModInt2 as u8),
-                    AsmInstruction::ModInt4 => bytecode.push(ByteCodes::ModInt4 as u8),
-                    AsmInstruction::ModInt8 => bytecode.push(ByteCodes::ModInt8 as u8),
-                    AsmInstruction::AddFloat4 => bytecode.push(ByteCodes::AddFloat4 as u8),
-                    AsmInstruction::AddFloat8 => bytecode.push(ByteCodes::AddFloat8 as u8),
-                    AsmInstruction::SubFloat4 => bytecode.push(ByteCodes::SubFloat4 as u8),
-                    AsmInstruction::SubFloat8 => bytecode.push(ByteCodes::SubFloat8 as u8),
-                    AsmInstruction::MulFloat4 => bytecode.push(ByteCodes::MulFloat4 as u8),
-                    AsmInstruction::MulFloat8 => bytecode.push(ByteCodes::MulFloat8 as u8),
-                    AsmInstruction::DivFloat4 => bytecode.push(ByteCodes::DivFloat4 as u8),
-                    AsmInstruction::DivFloat8 => bytecode.push(ByteCodes::DivFloat8 as u8),
-                    AsmInstruction::ModFloat4 => bytecode.push(ByteCodes::ModFloat4 as u8),
-                    AsmInstruction::ModFloat8 => bytecode.push(ByteCodes::ModFloat8 as u8),
+                    AsmInstruction::AddInt1 => push_op!(AddInt1),
+                    AsmInstruction::AddInt2 => push_op!(AddInt2),
+                    AsmInstruction::AddInt4 => push_op!(AddInt4),
+                    AsmInstruction::AddInt8 => push_op!(AddInt8),
+                    AsmInstruction::SubInt1 => push_op!(SubInt1),
+                    AsmInstruction::SubInt2 => push_op!(SubInt2),
+                    AsmInstruction::SubInt4 => push_op!(SubInt4),
+                    AsmInstruction::SubInt8 => push_op!(SubInt8),
+                    AsmInstruction::MulInt1 => push_op!(MulInt1),
+                    AsmInstruction::MulInt2 => push_op!(MulInt2),
+                    AsmInstruction::MulInt4 => push_op!(MulInt4),
+                    AsmInstruction::MulInt8 => push_op!(MulInt8),
+                    AsmInstruction::DivInt1 => push_op!(DivInt1),
+                    AsmInstruction::DivInt2 => push_op!(DivInt2),
+                    AsmInstruction::DivInt4 => push_op!(DivInt4),
+                    AsmInstruction::DivInt8 => push_op!(DivInt8),
+                    AsmInstruction::ModInt1 => push_op!(ModInt1),
+                    AsmInstruction::ModInt2 => push_op!(ModInt2),
+                    AsmInstruction::ModInt4 => push_op!(ModInt4),
+                    AsmInstruction::ModInt8 => push_op!(ModInt8),
+                    AsmInstruction::AddFloat4 => push_op!(AddFloat4),
+                    AsmInstruction::AddFloat8 => push_op!(AddFloat8),
+                    AsmInstruction::SubFloat4 => push_op!(SubFloat4),
+                    AsmInstruction::SubFloat8 => push_op!(SubFloat8),
+                    AsmInstruction::MulFloat4 => push_op!(MulFloat4),
+                    AsmInstruction::MulFloat8 => push_op!(MulFloat8),
+                    AsmInstruction::DivFloat4 => push_op!(DivFloat4),
+                    AsmInstruction::DivFloat8 => push_op!(DivFloat8),
+                    AsmInstruction::ModFloat4 => push_op!(ModFloat4),
+                    AsmInstruction::ModFloat8 => push_op!(ModFloat8),
                     AsmInstruction::LoadStatic1 { addr } => one_arg_address_instruction!(LoadStatic1, addr),
                     AsmInstruction::LoadStatic2 { addr } => one_arg_address_instruction!(LoadStatic2, addr),
                     AsmInstruction::LoadStatic4 { addr } => one_arg_address_instruction!(LoadStatic4, addr),
@@ -245,58 +251,65 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             value_bytes.push(bytes_per_byte[0]);
                         }
 
-                        bytecode.push(ByteCodes::LoadConstBytes as u8);
+                        push_op!(LoadConstBytes);
                         bytecode.extend(value_bytes.len().to_le_bytes());
                         bytecode.extend_from_slice(value_bytes.as_slice());
                     },
 
-                    AsmInstruction::Load1 => bytecode.push(ByteCodes::Load1 as u8),
-                    AsmInstruction::Load2 => bytecode.push(ByteCodes::Load2 as u8),
-                    AsmInstruction::Load4 => bytecode.push(ByteCodes::Load4 as u8),
-                    AsmInstruction::Load8 => bytecode.push(ByteCodes::Load8 as u8),
-                    AsmInstruction::LoadBytes => bytecode.push(ByteCodes::LoadBytes as u8),
+                    AsmInstruction::Load1 => push_op!(Load1),
+                    AsmInstruction::Load2 => push_op!(Load2),
+                    AsmInstruction::Load4 => push_op!(Load4),
+                    AsmInstruction::Load8 => push_op!(Load8),
+                    AsmInstruction::LoadBytes => push_op!(LoadBytes),
                     AsmInstruction::VirtualConstToReal { addr } => one_arg_address_instruction!(VirtualConstToReal, addr),
-                    AsmInstruction::VirtualToReal => bytecode.push(ByteCodes::VirtualToReal as u8),
-                    AsmInstruction::Store1 => bytecode.push(ByteCodes::Store1 as u8),
-                    AsmInstruction::Store2 => bytecode.push(ByteCodes::Store2 as u8),
-                    AsmInstruction::Store4 => bytecode.push(ByteCodes::Store4 as u8),
-                    AsmInstruction::Store8 => bytecode.push(ByteCodes::Store8 as u8),
-                    AsmInstruction::StoreBytes => bytecode.push(ByteCodes::StoreBytes as u8),
-                    AsmInstruction::Memmove1 => bytecode.push(ByteCodes::Memmove1 as u8),
-                    AsmInstruction::Memmove2 => bytecode.push(ByteCodes::Memmove2 as u8),
-                    AsmInstruction::Memmove4 => bytecode.push(ByteCodes::Memmove4 as u8),
-                    AsmInstruction::Memmove8 => bytecode.push(ByteCodes::Memmove8 as u8),
-                    AsmInstruction::MemmoveBytes => bytecode.push(ByteCodes::MemmoveBytes as u8),
-                    AsmInstruction::Duplicate1 => bytecode.push(ByteCodes::Duplicate1 as u8),
-                    AsmInstruction::Duplicate2 => bytecode.push(ByteCodes::Duplicate2 as u8),
-                    AsmInstruction::Duplicate4 => bytecode.push(ByteCodes::Duplicate4 as u8),
-                    AsmInstruction::Duplicate8 => bytecode.push(ByteCodes::Duplicate8 as u8),
-                    AsmInstruction::DuplicateBytes => bytecode.push(ByteCodes::DuplicateBytes as u8),
-                    AsmInstruction::Malloc => bytecode.push(ByteCodes::Malloc as u8),
-                    AsmInstruction::Realloc => bytecode.push(ByteCodes::Realloc as u8),
-                    AsmInstruction::Free => bytecode.push(ByteCodes::Free as u8),
-                    AsmInstruction::Intr => bytecode.push(ByteCodes::Intr as u8),
-                    AsmInstruction::IntrConst { code } => one_arg_number_instruction!(IntrConst, code, 1),
-                    AsmInstruction::Exit => bytecode.push(ByteCodes::Exit as u8),
+                    AsmInstruction::VirtualToReal => push_op!(VirtualToReal),
+                    AsmInstruction::Store1 => push_op!(Store1),
+                    AsmInstruction::Store2 => push_op!(Store2),
+                    AsmInstruction::Store4 => push_op!(Store4),
+                    AsmInstruction::Store8 => push_op!(Store8),
+                    AsmInstruction::StoreBytes => push_op!(StoreBytes),
+                    AsmInstruction::Memmove1 => push_op!(Memmove1),
+                    AsmInstruction::Memmove2 => push_op!(Memmove2),
+                    AsmInstruction::Memmove4 => push_op!(Memmove4),
+                    AsmInstruction::Memmove8 => push_op!(Memmove8),
+                    AsmInstruction::MemmoveBytes => push_op!(MemmoveBytes),
+                    AsmInstruction::Duplicate1 => push_op!(Duplicate1),
+                    AsmInstruction::Duplicate2 => push_op!(Duplicate2),
+                    AsmInstruction::Duplicate4 => push_op!(Duplicate4),
+                    AsmInstruction::Duplicate8 => push_op!(Duplicate8),
+                    AsmInstruction::DuplicateBytes => push_op!(DuplicateBytes),
+                    AsmInstruction::Malloc => push_op!(Malloc),
+                    AsmInstruction::Realloc => push_op!(Realloc),
+                    AsmInstruction::Free => push_op!(Free),
+                    AsmInstruction::Intr => push_op!(Intr),
+                    AsmInstruction::IntrConst { code } => one_arg_number_instruction!(IntrConst, code, INTERRUPT_SIZE),
+                    AsmInstruction::ReadError => push_op!(ReadError),
+                    AsmInstruction::SetError => push_op!(SetError),
+                    AsmInstruction::SetErrorConst { value } => one_arg_number_instruction!(SetErrorConst, value, ERROR_CODE_SIZE),
+                    AsmInstruction::Exit => push_op!(Exit),
                     AsmInstruction::JumpConst { addr } => one_arg_address_instruction!(JumpConst, addr),
-                    AsmInstruction::Jump => bytecode.push(ByteCodes::Jump as u8),
+                    AsmInstruction::Jump => push_op!(Jump),
                     AsmInstruction::JumpNotZeroConst1 { addr } => one_arg_address_instruction!(JumpNotZeroConst1, addr),
                     AsmInstruction::JumpNotZeroConst2 { addr } => one_arg_address_instruction!(JumpNotZeroConst2, addr),
                     AsmInstruction::JumpNotZeroConst4 { addr } => one_arg_address_instruction!(JumpNotZeroConst4, addr),
                     AsmInstruction::JumpNotZeroConst8 { addr } => one_arg_address_instruction!(JumpNotZeroConst8, addr),
-                    AsmInstruction::JumpNotZero1 => bytecode.push(ByteCodes::JumpNotZero1 as u8),
-                    AsmInstruction::JumpNotZero2 => bytecode.push(ByteCodes::JumpNotZero2 as u8),
-                    AsmInstruction::JumpNotZero4 => bytecode.push(ByteCodes::JumpNotZero4 as u8),
-                    AsmInstruction::JumpNotZero8 => bytecode.push(ByteCodes::JumpNotZero8 as u8),
+                    AsmInstruction::JumpNotZero1 => push_op!(JumpNotZero1),
+                    AsmInstruction::JumpNotZero2 => push_op!(JumpNotZero2),
+                    AsmInstruction::JumpNotZero4 => push_op!(JumpNotZero4),
+                    AsmInstruction::JumpNotZero8 => push_op!(JumpNotZero8),
                     AsmInstruction::JumpZeroConst1 { addr } => one_arg_address_instruction!(JumpZeroConst1, addr),
                     AsmInstruction::JumpZeroConst2 { addr } => one_arg_address_instruction!(JumpZeroConst2, addr),
                     AsmInstruction::JumpZeroConst4 { addr } => one_arg_address_instruction!(JumpZeroConst4, addr),
                     AsmInstruction::JumpZeroConst8 { addr } => one_arg_address_instruction!(JumpZeroConst8, addr),
-                    AsmInstruction::JumpZero1 => bytecode.push(ByteCodes::JumpZero1 as u8),
-                    AsmInstruction::JumpZero2 => bytecode.push(ByteCodes::JumpZero2 as u8),
-                    AsmInstruction::JumpZero4 => bytecode.push(ByteCodes::JumpZero4 as u8),
-                    AsmInstruction::JumpZero8 => bytecode.push(ByteCodes::JumpZero8 as u8),
-                    AsmInstruction::Nop => bytecode.push(ByteCodes::Nop as u8),
+                    AsmInstruction::JumpZero1 => push_op!(JumpZero1),
+                    AsmInstruction::JumpZero2 => push_op!(JumpZero2),
+                    AsmInstruction::JumpZero4 => push_op!(JumpZero4),
+                    AsmInstruction::JumpZero8 => push_op!(JumpZero8),
+                    AsmInstruction::JumpError => push_op!(JumpError),
+                    AsmInstruction::JumpNoError => push_op!(JumpNoError),
+                    AsmInstruction::JumpErrorConst { addr } => one_arg_address_instruction!(JumpErrorConst, addr),
+                    AsmInstruction::JumpNoErrorConst { addr } => one_arg_address_instruction!(JumpNoErrorConst, addr),
+                    AsmInstruction::Nop => push_op!(Nop),
                 }
             }
         };

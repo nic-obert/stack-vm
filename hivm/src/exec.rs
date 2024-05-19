@@ -1,8 +1,9 @@
 
-use hivmlib::{ByteCodes, Interrupts, ByteCode, VirtualAddress, Address};
+use hivmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddress};
 
+use std::io::Read;
 use std::mem::{self, MaybeUninit};
-use std::alloc;
+use std::{alloc, io};
 use std::ptr;
 
 
@@ -289,6 +290,8 @@ pub struct VM {
     opstack: Stack,
     /// Variable stack. Stores the variables in the stack frame.
     varstack: Stack,
+    /// Stores the last error code.
+    error_code: ErrorCodes
 
 }
 
@@ -305,11 +308,12 @@ impl VM {
         Self {
             varstack: Stack::new(stack_size.unwrap_or(DEFAULT_VARSTACK_SIZE)),
             opstack: Stack::new(OPSTACK_SIZE),
+            error_code: ErrorCodes::NoError
         }
     }
 
 
-    pub fn run(&mut self, code: ByteCode<'_>) -> i32 {
+    pub fn run(&mut self, code: ByteCode<'_>) -> ErrorCodes {
 
         let mut program = Program::new(code);
 
@@ -653,7 +657,7 @@ impl VM {
 
                 ByteCodes::Exit => {
                     let exit_code = self.opstack.pop_4() as i32;
-                    return exit_code;
+                    return ErrorCodes::from(exit_code);
                 },
 
                 ByteCodes::Intr => {
@@ -664,7 +668,21 @@ impl VM {
                 ByteCodes::IntrConst => {
                     let intr_code = Interrupts::from(program.fetch_1());
                     self.handle_interrupt(intr_code, &mut program);
-                }
+                },
+
+                ByteCodes::ReadError => {
+                    self.opstack.push_4(self.error_code as u32);
+                },
+
+                ByteCodes::SetErrorConst => {
+                    let error_code = program.fetch_4() as i32;
+                    self.error_code = ErrorCodes::from(error_code);
+                },
+
+                ByteCodes::SetError => {
+                    let error_code = self.opstack.pop_4() as i32;
+                    self.error_code = ErrorCodes::from(error_code);
+                },             
 
                 ByteCodes::Duplicate1 => {
                     self.opstack.push_1(
@@ -834,6 +852,34 @@ impl VM {
                     }
                 },
 
+                ByteCodes::JumpError => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    if !matches!(self.error_code, ErrorCodes::NoError) {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNoError => {
+                    let target = VirtualAddress(self.opstack.pop_8() as usize);
+                    if matches!(self.error_code, ErrorCodes::NoError) {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpErrorConst => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    if !matches!(self.error_code, ErrorCodes::NoError) {
+                        program.jump_to(target);
+                    }
+                },
+
+                ByteCodes::JumpNoErrorConst => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    if matches!(self.error_code, ErrorCodes::NoError) {
+                        program.jump_to(target);
+                    }
+                },
+
                 ByteCodes::Nop => { /* Do nothing */ },
 
             }
@@ -841,7 +887,7 @@ impl VM {
 
         // The program has no more instruction to execute and an exit code was not provided.
         // Assume the program ended successfully.
-        0
+        self.error_code
     }
 
 
@@ -883,6 +929,28 @@ impl VM {
                 };
                 print!("{}", string);
             },
+            Interrupts::ReadBytes => {
+                let n = self.opstack.pop_8() as usize;
+                let mut buf = Vec::with_capacity(n);
+                if let Err(err) = io::stdin().read_exact(&mut buf) {
+                   self.error_code = match err.kind() {
+                        io::ErrorKind::UnexpectedEof => ErrorCodes::UnexpectedEOF,
+                        _ => ErrorCodes::GenericError,
+                    }
+                } else {
+                    self.opstack.push_bytes(&buf);
+                }
+            }
+            Interrupts::ReadAll => {
+                let mut buf = Vec::new();
+                match io::stdin().read_to_end(&mut buf) {
+                    Ok(bytes_read) => {
+                        self.opstack.push_bytes(&buf);
+                        self.opstack.push_8(bytes_read as u64);
+                    },
+                    Err(_err) => self.error_code = ErrorCodes::GenericError
+                }
+            }
 
         }
     }
