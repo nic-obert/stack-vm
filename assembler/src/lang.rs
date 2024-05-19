@@ -241,7 +241,7 @@ pub enum AsmValue {
     CurrentPosition,
     StringLiteral(StaticID),
     Symbol(SymbolID),
-    MacroSymbol(SymbolID),
+    MacroParameter(SymbolID),
 }
 
 impl AsmValue {

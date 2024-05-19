@@ -6,7 +6,7 @@ Project Description
 
 ### Todo
 
-- [ ] implement value definition macros  
+- [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
 - [ ] write assembly documentation  
 - [ ] implement a primitive assembly module system like #include in C  
@@ -20,6 +20,7 @@ Project Description
 
 ### Done ✓
 
+- [x] implement value definition macros  
 - [x] implement macros  
 - [x] add interrupts. some interrupts are predefined, other interrupts cause to jump to a specific memory address and execute from there  
 - [x] we may incur in alignment problems when interpreting random memory addresses as *T. Testing is needed  

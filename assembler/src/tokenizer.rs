@@ -18,7 +18,7 @@ pub type TokenList<'a> = Vec<Token<'a>>;
 lazy_static! {
 
     static ref TOKEN_REGEX: Regex = Regex::new(
-        r#"(?m)'(?:\\'|[^'])*'|"(?:\\"|[^"])*"|[_a-zA-Z]\w*|0x[a-fA-F\d]+|-?\d+[.]\d*|-?[.]?\d+|[-+\/%@#$:.!]|\S"#
+        r#"(?m)'(?:\\'|[^'])*'|"(?:\\"|[^"])*"|[_a-zA-Z]\w*|0x[a-fA-F\d]+|-?\d+[.]\d*|-?[.]?\d+|%=|[-+\/%@#$:.!]|\S"#
     ).unwrap();
 
     static ref IDENTIFIER_REGEX: Regex = Regex::new(
@@ -165,6 +165,7 @@ pub enum TokenValue {
     Dot,
     EndMacro,
     Bang,
+    ValueMacroDef,
 }
 
 impl TokenValue {
@@ -176,7 +177,7 @@ impl TokenValue {
             TokenValue::Number(_) | 
             TokenValue::Identifier(_) |
             TokenValue::Colon |
-            TokenValue::EndMacro
+            TokenValue::EndMacro 
                 => TokenBasePriority::None,
 
             TokenValue::Instruction(_) => TokenBasePriority::Instruction,
@@ -193,7 +194,8 @@ impl TokenValue {
             TokenValue::Dollar |
             TokenValue::At |
             TokenValue::Dot |
-            TokenValue::Bang
+            TokenValue::Bang |
+            TokenValue::ValueMacroDef
                 => TokenBasePriority::AsmOperator,
         }
     }
@@ -239,6 +241,8 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
             let token_value = match token_rc.string {
 
                 "!" => TokenValue::Bang,
+
+                "%=" => TokenValue::ValueMacroDef,
 
                 "." => TokenValue::Dot,
                 
