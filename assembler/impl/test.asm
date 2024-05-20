@@ -1,13 +1,10 @@
 
-%int code
-    intrconst %code
-%endmacro
+.num
+dn 4 9081
 
 .text
 
-%= code 2
-
-    loadconst4 90
-    !int !code
+    loadstatic4 num
+    intrconst 2
     
 

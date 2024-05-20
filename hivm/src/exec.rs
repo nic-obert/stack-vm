@@ -253,21 +253,21 @@ impl<'a> Program<'a> {
 
     pub fn get_static2(&self, address: VirtualAddress) -> u16 {
         unsafe {
-            *(self.code[address.0..].as_ptr() as *const u16)
+            (self.code[address.0..].as_ptr() as *const u16).read_unaligned()
         }
     }
 
 
     pub fn get_static4(&self, address: VirtualAddress) -> u32 {
         unsafe {
-            *(self.code[address.0..].as_ptr() as *const u32)
+            (self.code[address.0..].as_ptr() as *const u32).read_unaligned()
         }
     }
 
 
     pub fn get_static8(&self, address: VirtualAddress) -> u64 {
         unsafe {
-            *(self.code[address.0..].as_ptr() as *const u64)
+            (self.code[address.0..].as_ptr() as *const u64).read_unaligned()
         }
     }
 

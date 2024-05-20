@@ -20,6 +20,7 @@ Project Description
 
 ### Done ✓
 
+- [x] add pseudo-instructions to set bytes in-place  
 - [x] implement value definition macros  
 - [x] implement macros  
 - [x] add interrupts. some interrupts are predefined, other interrupts cause to jump to a specific memory address and execute from there  

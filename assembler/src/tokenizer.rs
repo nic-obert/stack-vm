@@ -3,7 +3,7 @@ use std::path::Path;
 use std::borrow::Cow;
 
 use crate::symbol_table::{StaticID, StaticValue, Symbol, SymbolID, SymbolTable};
-use crate::lang::Number;
+use crate::lang::{Number, PseudoInstructions};
 use crate::errors;
 
 use hivmlib::ByteCodes;
@@ -156,6 +156,7 @@ pub enum TokenValue {
     Number(Number),
     Identifier(SymbolID),
     Instruction(ByteCodes),
+    PseudoInstruction(PseudoInstructions),
     Dollar,
     Plus,
     Minus,
@@ -180,7 +181,9 @@ impl TokenValue {
             TokenValue::EndMacro 
                 => TokenBasePriority::None,
 
-            TokenValue::Instruction(_) => TokenBasePriority::Instruction,
+            TokenValue::Instruction(_) |
+            TokenValue::PseudoInstruction(_)
+                => TokenBasePriority::Instruction,
 
             TokenValue::Plus |
             TokenValue::Minus
@@ -310,6 +313,9 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
                     if let Some(instruction) = ByteCodes::from_string(string) {
                         TokenValue::Instruction(instruction)
                     
+                    } else if let Some(instruction) = PseudoInstructions::from_string(string) {
+                        TokenValue::PseudoInstruction(instruction)
+
                     } else if string == "endmacro" {
                         if let Some(last_token) = current_line.pop() {
                             if !matches!(last_token.value, TokenValue::Mod) {

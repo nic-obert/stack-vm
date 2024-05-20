@@ -1,9 +1,4 @@
 use std::rc::Rc;
-use std::mem;
-
-use static_assertions::const_assert_eq;
-
-use hivmlib::ByteCodes;
 
 use crate::tokenizer::SourceToken;
 use crate::symbol_table::{StaticID, SymbolID, SymbolTable};
@@ -99,6 +94,10 @@ pub enum AddressLike {
 }
 
 
+type AddressOperand<'a> = (AddressLike, Rc<SourceToken<'a>>);
+type NumberOperand<'a> = (NumberLike, Rc<SourceToken<'a>>);
+
+
 /// Representation of assembly instructions and their operands
 #[derive(Debug)]
 pub enum AsmInstruction<'a> {
@@ -135,17 +134,17 @@ pub enum AsmInstruction<'a> {
     ModFloat4,
     ModFloat8,
 
-    LoadStatic1 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    LoadStatic2 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    LoadStatic4 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    LoadStatic8 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    LoadStaticBytes { addr: (AddressLike, Rc<SourceToken<'a>>), count: (NumberLike, Rc<SourceToken<'a>>) },
+    LoadStatic1 { addr: AddressOperand<'a> },
+    LoadStatic2 { addr: AddressOperand<'a> },
+    LoadStatic4 { addr: AddressOperand<'a> },
+    LoadStatic8 { addr: AddressOperand<'a> },
+    LoadStaticBytes { addr: AddressOperand<'a>, count: NumberOperand<'a> },
 
-    LoadConst1 { value: (NumberLike, Rc<SourceToken<'a>>) },
-    LoadConst2 { value: (NumberLike, Rc<SourceToken<'a>>) },
-    LoadConst4 { value: (NumberLike, Rc<SourceToken<'a>>) },
-    LoadConst8 { value: (NumberLike, Rc<SourceToken<'a>>) },
-    LoadConstBytes { bytes: Vec<(NumberLike, Rc<SourceToken<'a>>)> },
+    LoadConst1 { value: NumberOperand<'a> },
+    LoadConst2 { value: NumberOperand<'a> },
+    LoadConst4 { value: NumberOperand<'a> },
+    LoadConst8 { value: NumberOperand<'a> },
+    LoadConstBytes { bytes: Vec<NumberOperand<'a>> },
 
     Load1,
     Load2,
@@ -153,7 +152,7 @@ pub enum AsmInstruction<'a> {
     Load8,
     LoadBytes,
 
-    VirtualConstToReal { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    VirtualConstToReal { addr: AddressOperand<'a> },
     VirtualToReal,
 
     Store1,
@@ -179,42 +178,81 @@ pub enum AsmInstruction<'a> {
     Free,
 
     Intr,
-    IntrConst { code: (NumberLike, Rc<SourceToken<'a>>) },
+    IntrConst { value: NumberOperand<'a> },
 
     ReadError,
-    SetErrorConst { value: (NumberLike, Rc<SourceToken<'a>>) },
+    SetErrorConst { value: NumberOperand<'a> },
     SetError,
 
     Exit,
 
-    JumpConst { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpConst { addr: AddressOperand<'a> },
     Jump,
-    JumpNotZeroConst1 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    JumpNotZeroConst2 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    JumpNotZeroConst4 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    JumpNotZeroConst8 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpNotZeroConst1 { addr: AddressOperand<'a> },
+    JumpNotZeroConst2 { addr: AddressOperand<'a> },
+    JumpNotZeroConst4 { addr: AddressOperand<'a> },
+    JumpNotZeroConst8 { addr: AddressOperand<'a> },
     JumpNotZero1,
     JumpNotZero2,
     JumpNotZero4,
     JumpNotZero8,
-    JumpZeroConst1 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    JumpZeroConst2 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    JumpZeroConst4 { addr: (AddressLike, Rc<SourceToken<'a>>) },
-    JumpZeroConst8 { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpZeroConst1 { addr: AddressOperand<'a> },
+    JumpZeroConst2 { addr: AddressOperand<'a> },
+    JumpZeroConst4 { addr: AddressOperand<'a> },
+    JumpZeroConst8 { addr: AddressOperand<'a> },
     JumpZero1,
     JumpZero2,
     JumpZero4,
     JumpZero8,
-    JumpErrorConst { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpErrorConst { addr: AddressOperand<'a> },
     JumpError,
-    JumpNoErrorConst { addr: (AddressLike, Rc<SourceToken<'a>>) },
+    JumpNoErrorConst { addr: AddressOperand<'a> },
     JumpNoError,
+
+    DefineNumber { size: NumberOperand<'a>, value: NumberOperand<'a> },
+    DefineBytes { bytes: Vec<NumberOperand<'a>> },
+    DefineString { string: StaticID },
 
     Nop
 
 }
 
-const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>());
+// The check below is not valid anymore because pseudo-instructions are not included in the VM's lib file.
+// const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>());
+
+
+macro_rules! declare_pseudo_instructions {
+    ($($name:ident $asm_name:ident),+) => {
+        
+/// Pseudo-instructions are assembly-only instructions that get evaluated at compile-time and have effects on the generated output byte code.
+/// Each instruction is represented by one byte.
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum PseudoInstructions {
+    $($name),+
+}
+
+impl PseudoInstructions {
+
+    pub fn from_string(string: &str) -> Option<Self> {
+        match string {
+            $(stringify!($asm_name) => Some(Self::$name),)+
+            _ => None
+        }
+    }
+
+}
+
+    };
+}
+
+declare_pseudo_instructions! {
+
+    DefineNumber dn,
+    DefineBytes db,
+    DefineString ds
+
+}
 
 
 #[derive(Debug)]

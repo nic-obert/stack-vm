@@ -69,6 +69,11 @@ impl<'a> SymbolTable<'a> {
     }
 
     
+    pub fn get_static(&self, id: StaticID) -> &StaticValue<'a> {
+        &self.statics[id.0]
+    }
+
+    
     // pub fn push_scope(&mut self) {
     //     self.scopes.push(Scope::new());
     // }

@@ -4,7 +4,7 @@ use hivmlib::ByteCodes;
 
 use crate::tokenizer::{SourceCode, Token, TokenList, TokenValue};
 use crate::symbol_table::{SymbolID, SymbolTable};
-use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmValue, Number, NumberLike};
+use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmValue, Number, NumberLike, PseudoInstructions};
 use crate::errors;
 
 
@@ -97,6 +97,7 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
             TokenValue::Div => todo!(),
             
             TokenValue::Instruction(_) |
+            TokenValue::PseudoInstruction(_) |
             TokenValue::Dot |
             TokenValue::At |
             TokenValue::Colon |
@@ -123,6 +124,14 @@ type MacroMap<'a> = HashMap<SymbolID, MacroDef<'a>>;
 
 fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>, nodes: &mut Vec<AsmNode<'a>>, macros: &mut MacroMap<'a>, token_lines: &'a [TokenList<'a>], line_index: &mut usize, source: SourceCode, symbol_table: &'a SymbolTable<'a>) {
 
+    macro_rules! check_arg_count {
+        ($required:expr) => {
+            if operands.len() != $required {
+                errors::parsing_error(&main_operator.source, source, format!("Operator expects exactly {} arguments, but {} were given.", $required, operands.len()).as_str())
+            }
+        }
+    }
+
     // Handle an eventual macro call and expand it
     if matches!(main_operator.value, TokenValue::Bang) {
         let macro_name = operands.first().unwrap_or_else(
@@ -141,9 +150,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
         // Skip the macro name
         let operands = &operands[1..];
 
-        if operands.len() != macro_def.args.len() {
-            errors::parsing_error(&main_operator.source, source, format!("Macro call has wrong number of arguments. Expected {}, got {}.", macro_def.args.len(), operands.len()).as_str());
-        }
+        check_arg_count!(macro_def.args.len());
 
         let mut macro_args = HashMap::new();
 
@@ -183,12 +190,84 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
         return;
     }
 
+
+    macro_rules! no_args_instruction {
+        ($name:ident) => {{
+            check_arg_count!(0);
+            nodes.push(AsmNode { 
+                value: AsmNodeValue::Instruction(AsmInstruction::$name),
+                source: main_operator.source.clone()
+            });
+        }}
+    }
+
+    macro_rules! parse_numeric_arg {
+        ($index:literal, $op:ident, $value:ident) => {
+            let $op = &operands[$index];
+            parse_numeric_arg!($op, $value);
+        };
+        ($op:ident, $value:ident) => {
+            let $value = match &$op.value {
+                AsmValue::Const(n) => NumberLike::from_number(n),
+                AsmValue::CurrentPosition => NumberLike::CurrentPosition,
+                AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+               
+                AsmValue::StringLiteral(_)
+                    => errors::parsing_error(&$op.source, source, "Expected a numeric value, got a string literal."),
+
+                AsmValue::MacroParameter(_)
+                    => errors::parsing_error(&$op.source, source, "Macro parameter outside of a macro definition.")
+            };
+        };
+    }
+
+    macro_rules! one_arg_numeric_instruction {
+        ($name:ident) => {{
+            check_arg_count!(1);
+
+            parse_numeric_arg!(0, op, val);
+
+            nodes.push(AsmNode { 
+                value: AsmNodeValue::Instruction(AsmInstruction::$name { value: (val, op.source.clone()) }),
+                source: main_operator.source.clone()
+            });
+        }}
+    }
+
+    macro_rules! parse_address_arg {
+        ($index:literal, $op:ident, $value:ident) => {
+            let $op = &operands[0];
+            let $value = match &$op.value {
+                AsmValue::Const(n) => AddressLike::Number(n.clone()),
+                AsmValue::CurrentPosition => AddressLike::CurrentPosition,
+                AsmValue::Symbol(id) => AddressLike::Symbol(*id),
+               
+                AsmValue::StringLiteral(_)
+                    => errors::parsing_error(&$op.source, source, "Expected an address value, got a string literal."),
+
+                AsmValue::MacroParameter(_)
+                    => errors::parsing_error(&$op.source, source, "Macro parameter outside of a macro definition.")
+            };
+        };
+    }
+
+    macro_rules! one_arg_address_instruction {
+        ($name:ident) => {{
+            check_arg_count!(1);
+
+            parse_address_arg!(0, op, val);
+
+            nodes.push(AsmNode {
+                value: AsmNodeValue::Instruction(AsmInstruction::$name { addr: (val, op.source.clone()) }),
+                source: main_operator.source.clone()
+            });
+        }}
+    }
+
     match main_operator.value {
 
         TokenValue::At => {
-            if operands.len() != 1 {
-                errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-            }
+            check_arg_count!(1);
 
             let op = &operands[0];
             let symbol_id = if let AsmValue::Symbol(id) = op.value {
@@ -197,17 +276,20 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 errors::parsing_error(&op.source, source, "Expected a symbol as label name.");
             };
 
-            let symbol = symbol_table.get_symbol(symbol_id).borrow();
+            // Reduce the scope of `symbol` to comply with the dynamic borrow checker
+            {
+                let symbol = symbol_table.get_symbol(symbol_id).borrow();
 
-            // Disallow defining a label more than once.
-            if symbol.value.is_some() {
-                errors::symbol_redeclaration(&op.source, source, &symbol);
+                // Disallow defining a label more than once.
+                if symbol.value.is_some() {
+                    errors::symbol_redeclaration(&op.source, source, &symbol);
+                }
+
+                nodes.push(AsmNode { 
+                    value: AsmNodeValue::Label(symbol.source.string),
+                    source: main_operator.source.clone()
+                });
             }
-
-            nodes.push(AsmNode { 
-                value: AsmNodeValue::Label(symbol.source.string),
-                source: main_operator.source.clone()
-            });
             
             // Mark the label as declared at this location in the source code. No further declarations of the same label are allowed.
             // Leave the value as None since its location in the binary is not known yet. It will be resolved when the binary is generated.
@@ -228,9 +310,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 errors::parsing_error(&macro_name.source, source, "Expected a symbol as macro name.")
             };
 
-            if operands.len() != 2 {
-                errors::parsing_error(&main_operator.source, source, format!("Macro value declaration expects exactly two arguments, but {} were given.", operands.len()).as_str());
-            }
+            check_arg_count!(2);
 
             // Assume it's present because of the previous length check
             let value = operands[1].value.clone();
@@ -296,9 +376,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
         },
 
         TokenValue::Dot => {
-            if operands.len() != 1 {
-                errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-            }
+            check_arg_count!(1);
 
             let op = &operands[0];
             let symbol_id = if let AsmValue::Symbol(id) = op.value {
@@ -324,252 +402,176 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
             symbol_table.define_symbol(symbol_id, None, main_operator.source.clone());
         },
 
-        TokenValue::Instruction(code) => {
+        TokenValue::Instruction(code) => match code {
 
-            macro_rules! no_args_instruction {
-                ($name:ident) => {{
-                    if !operands.is_empty() {
-                        errors::parsing_error(&main_operator.source, source, "Operator expects no arguments.");
-                    }
-                    nodes.push(AsmNode { 
-                        value: AsmNodeValue::Instruction(AsmInstruction::$name),
-                        source: main_operator.source.clone()
-                    });
-                }}
-            }
+            ByteCodes::AddInt1 => no_args_instruction!(AddInt1),
+            ByteCodes::AddInt2 => no_args_instruction!(AddInt2),
+            ByteCodes::AddInt4 => no_args_instruction!(AddInt4),
+            ByteCodes::AddInt8 => no_args_instruction!(AddInt8),
+            ByteCodes::SubInt1 => no_args_instruction!(SubInt1),
+            ByteCodes::SubInt2 => no_args_instruction!(SubInt2),
+            ByteCodes::SubInt4 => no_args_instruction!(SubInt4),
+            ByteCodes::SubInt8 => no_args_instruction!(SubInt8),
+            ByteCodes::MulInt1 => no_args_instruction!(MulInt1),
+            ByteCodes::MulInt2 => no_args_instruction!(MulInt2),
+            ByteCodes::MulInt4 => no_args_instruction!(MulInt4),
+            ByteCodes::MulInt8 => no_args_instruction!(MulInt8),
+            ByteCodes::DivInt1 => no_args_instruction!(DivInt1),
+            ByteCodes::DivInt2 => no_args_instruction!(DivInt2),
+            ByteCodes::DivInt4 => no_args_instruction!(DivInt4),
+            ByteCodes::DivInt8 => no_args_instruction!(DivInt8),
+            ByteCodes::ModInt1 => no_args_instruction!(ModInt1),
+            ByteCodes::ModInt2 => no_args_instruction!(ModInt2),
+            ByteCodes::ModInt4 => no_args_instruction!(ModInt4),
+            ByteCodes::ModInt8 => no_args_instruction!(ModInt8),
+            ByteCodes::AddFloat4 => no_args_instruction!(AddFloat4),
+            ByteCodes::AddFloat8 => no_args_instruction!(AddFloat8),
+            ByteCodes::SubFloat4 => no_args_instruction!(SubFloat4),
+            ByteCodes::SubFloat8 => no_args_instruction!(SubFloat8),
+            ByteCodes::MulFloat4 => no_args_instruction!(MulFloat4),
+            ByteCodes::MulFloat8 => no_args_instruction!(MulFloat8),
+            ByteCodes::DivFloat4 => no_args_instruction!(DivFloat4),
+            ByteCodes::DivFloat8 => no_args_instruction!(DivFloat8),
+            ByteCodes::ModFloat4 => no_args_instruction!(ModFloat4),
+            ByteCodes::ModFloat8 => no_args_instruction!(ModFloat8),
+            ByteCodes::LoadStatic1 => one_arg_address_instruction!(LoadStatic1),
+            ByteCodes::LoadStatic2 => one_arg_address_instruction!(LoadStatic2),
+            ByteCodes::LoadStatic4 => one_arg_address_instruction!(LoadStatic4),
+            ByteCodes::LoadStatic8 => one_arg_address_instruction!(LoadStatic8),
 
-            macro_rules! one_arg_numeric_instruction {
-                ($name:ident) => {{
-                    if operands.len() != 1 {
-                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                    }
+            ByteCodes::LoadStaticBytes => {
+                check_arg_count!(2);
 
-                    let op = &operands[0];
-                    let val = match &op.value {
-                        AsmValue::Const(n) => NumberLike::from_number(n),
-                        AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                        AsmValue::Symbol(id) => NumberLike::Symbol(*id),
-                       
-                        AsmValue::StringLiteral(_)
-                            => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
+                parse_address_arg!(0, addr_op, addr);
+                parse_numeric_arg!(1, count_op, count);
 
-                        AsmValue::MacroParameter(_)
-                            => errors::parsing_error(&op.source, source, "Macro parameter outside of a macro definition.")
-                    };
+                nodes.push(AsmNode {
+                    value: AsmNodeValue::Instruction(AsmInstruction::LoadStaticBytes { addr: (addr, addr_op.source.clone()), count: (count, count_op.source.clone()) }),
+                    source: main_operator.source.clone()
+                });
+            },
 
-                    nodes.push(AsmNode { 
-                        value: AsmNodeValue::Instruction(AsmInstruction::$name { value: (val, op.source.clone()) }),
-                        source: main_operator.source.clone()
-                    });
-                }}
-            }
+            ByteCodes::LoadConst1 => one_arg_numeric_instruction!(LoadConst1),
+            ByteCodes::LoadConst2 => one_arg_numeric_instruction!(LoadConst2),
+            ByteCodes::LoadConst4 => one_arg_numeric_instruction!(LoadConst4),
+            ByteCodes::LoadConst8 => one_arg_numeric_instruction!(LoadConst8),
 
-            macro_rules! one_arg_address_instruction {
-                ($name:ident) => {{
-                    if operands.len() != 1 {
-                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                    }
+            ByteCodes::LoadConstBytes => {
+                let mut bytes = Vec::with_capacity(operands.len());
 
-                    let op = &operands[0];
-                    let val = match &op.value {
-                        AsmValue::Const(n) => AddressLike::Number(n.clone()),
-                        AsmValue::CurrentPosition => AddressLike::CurrentPosition,
-                        AsmValue::Symbol(id) => AddressLike::Symbol(*id),
-                       
-                        AsmValue::StringLiteral(_)
-                            => errors::parsing_error(&op.source, source, "Expected an address value, got a string literal."),
+                for op in operands.iter() {
+                    parse_numeric_arg!(op, val);
+                    bytes.push((val, op.source.clone()));
+                }
 
-                        AsmValue::MacroParameter(_)
-                            => errors::parsing_error(&op.source, source, "Macro parameter outside of a macro definition.")
-                    };
+                nodes.push(AsmNode {
+                    value: AsmNodeValue::Instruction(AsmInstruction::LoadConstBytes { bytes }),
+                    source: main_operator.source.clone()
+                });
+            },
 
-                    nodes.push(AsmNode {
-                        value: AsmNodeValue::Instruction(AsmInstruction::$name { addr: (val, op.source.clone()) }),
-                        source: main_operator.source.clone()
-                    });
-                }}
-            }
+            ByteCodes::Load1 => no_args_instruction!(Load1),
+            ByteCodes::Load2 => no_args_instruction!(Load2),
+            ByteCodes::Load4 => no_args_instruction!(Load4),
+            ByteCodes::Load8 => no_args_instruction!(Load8),
+            ByteCodes::LoadBytes => no_args_instruction!(LoadBytes),
+            ByteCodes::VirtualConstToReal => one_arg_address_instruction!(VirtualConstToReal),
+            ByteCodes::VirtualToReal => no_args_instruction!(VirtualToReal),
+            ByteCodes::Store1 => no_args_instruction!(Store1),
+            ByteCodes::Store2 => no_args_instruction!(Store2),
+            ByteCodes::Store4 => no_args_instruction!(Store4),
+            ByteCodes::Store8 => no_args_instruction!(Store8),
+            ByteCodes::StoreBytes => no_args_instruction!(StoreBytes),
+            ByteCodes::Memmove1 => no_args_instruction!(Memmove1),
+            ByteCodes::Memmove2 => no_args_instruction!(Memmove2),
+            ByteCodes::Memmove4 => no_args_instruction!(Memmove4),
+            ByteCodes::Memmove8 => no_args_instruction!(Memmove8),
+            ByteCodes::MemmoveBytes => no_args_instruction!(MemmoveBytes),
+            ByteCodes::Duplicate1 => no_args_instruction!(Duplicate1),
+            ByteCodes::Duplicate2 => no_args_instruction!(Duplicate2),
+            ByteCodes::Duplicate4 => no_args_instruction!(Duplicate4),
+            ByteCodes::Duplicate8 => no_args_instruction!(Duplicate8),
+            ByteCodes::DuplicateBytes => no_args_instruction!(DuplicateBytes),
+            ByteCodes::Malloc => no_args_instruction!(Malloc),
+            ByteCodes::Realloc => no_args_instruction!(Realloc),
+            ByteCodes::Free => no_args_instruction!(Free),
+            ByteCodes::Intr => no_args_instruction!(Intr),
+            ByteCodes::IntrConst => one_arg_numeric_instruction!(IntrConst),
+            ByteCodes::ReadError => no_args_instruction!(ReadError),
+            ByteCodes::SetErrorConst => one_arg_numeric_instruction!(SetErrorConst),
+            ByteCodes::SetError => no_args_instruction!(SetError),
+            ByteCodes::Exit => no_args_instruction!(Exit),
+            ByteCodes::JumpConst => one_arg_address_instruction!(JumpConst),
+            ByteCodes::Jump => no_args_instruction!(Jump),
+            ByteCodes::JumpNotZeroConst1 => one_arg_address_instruction!(JumpNotZeroConst1),
+            ByteCodes::JumpNotZeroConst2 => one_arg_address_instruction!(JumpNotZeroConst2),
+            ByteCodes::JumpNotZeroConst4 => one_arg_address_instruction!(JumpNotZeroConst4),
+            ByteCodes::JumpNotZeroConst8 => one_arg_address_instruction!(JumpNotZeroConst8),
+            ByteCodes::JumpNotZero1 => no_args_instruction!(JumpNotZero1),
+            ByteCodes::JumpNotZero2 => no_args_instruction!(JumpNotZero2),
+            ByteCodes::JumpNotZero4 => no_args_instruction!(JumpNotZero4),
+            ByteCodes::JumpNotZero8 => no_args_instruction!(JumpNotZero8),
+            ByteCodes::JumpZeroConst1 => one_arg_address_instruction!(JumpZeroConst1),
+            ByteCodes::JumpZeroConst2 => one_arg_address_instruction!(JumpZeroConst2),
+            ByteCodes::JumpZeroConst4 => one_arg_address_instruction!(JumpZeroConst4),
+            ByteCodes::JumpZeroConst8 => one_arg_address_instruction!(JumpZeroConst8),
+            ByteCodes::JumpErrorConst => one_arg_address_instruction!(JumpErrorConst),
+            ByteCodes::JumpNoErrorConst => one_arg_address_instruction!(JumpNoErrorConst),
+            ByteCodes::JumpZero1 => no_args_instruction!(JumpZero1),
+            ByteCodes::JumpZero2 => no_args_instruction!(JumpZero2),
+            ByteCodes::JumpZero4 => no_args_instruction!(JumpZero4),
+            ByteCodes::JumpZero8 => no_args_instruction!(JumpZero8),
+            ByteCodes::JumpError => no_args_instruction!(JumpError),
+            ByteCodes::JumpNoError => no_args_instruction!(JumpNoError),
+            ByteCodes::Nop => no_args_instruction!(Nop),
+        },
 
-            match code {
-                ByteCodes::AddInt1 => no_args_instruction!(AddInt1),
-                ByteCodes::AddInt2 => no_args_instruction!(AddInt2),
-                ByteCodes::AddInt4 => no_args_instruction!(AddInt4),
-                ByteCodes::AddInt8 => no_args_instruction!(AddInt8),
-                ByteCodes::SubInt1 => no_args_instruction!(SubInt1),
-                ByteCodes::SubInt2 => no_args_instruction!(SubInt2),
-                ByteCodes::SubInt4 => no_args_instruction!(SubInt4),
-                ByteCodes::SubInt8 => no_args_instruction!(SubInt8),
-                ByteCodes::MulInt1 => no_args_instruction!(MulInt1),
-                ByteCodes::MulInt2 => no_args_instruction!(MulInt2),
-                ByteCodes::MulInt4 => no_args_instruction!(MulInt4),
-                ByteCodes::MulInt8 => no_args_instruction!(MulInt8),
-                ByteCodes::DivInt1 => no_args_instruction!(DivInt1),
-                ByteCodes::DivInt2 => no_args_instruction!(DivInt2),
-                ByteCodes::DivInt4 => no_args_instruction!(DivInt4),
-                ByteCodes::DivInt8 => no_args_instruction!(DivInt8),
-                ByteCodes::ModInt1 => no_args_instruction!(ModInt1),
-                ByteCodes::ModInt2 => no_args_instruction!(ModInt2),
-                ByteCodes::ModInt4 => no_args_instruction!(ModInt4),
-                ByteCodes::ModInt8 => no_args_instruction!(ModInt8),
-                ByteCodes::AddFloat4 => no_args_instruction!(AddFloat4),
-                ByteCodes::AddFloat8 => no_args_instruction!(AddFloat8),
-                ByteCodes::SubFloat4 => no_args_instruction!(SubFloat4),
-                ByteCodes::SubFloat8 => no_args_instruction!(SubFloat8),
-                ByteCodes::MulFloat4 => no_args_instruction!(MulFloat4),
-                ByteCodes::MulFloat8 => no_args_instruction!(MulFloat8),
-                ByteCodes::DivFloat4 => no_args_instruction!(DivFloat4),
-                ByteCodes::DivFloat8 => no_args_instruction!(DivFloat8),
-                ByteCodes::ModFloat4 => no_args_instruction!(ModFloat4),
-                ByteCodes::ModFloat8 => no_args_instruction!(ModFloat8),
-                ByteCodes::LoadStatic1 => one_arg_address_instruction!(LoadStatic1),
-                ByteCodes::LoadStatic2 => one_arg_address_instruction!(LoadStatic2),
-                ByteCodes::LoadStatic4 => one_arg_address_instruction!(LoadStatic4),
-                ByteCodes::LoadStatic8 => one_arg_address_instruction!(LoadStatic8),
+        TokenValue::PseudoInstruction(instruction) => match instruction {
 
-                ByteCodes::LoadStaticBytes => {
-                    if operands.len() != 2 {
-                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly two arguments.");
-                    }
+            PseudoInstructions::DefineNumber => {
+                check_arg_count!(2);
 
-                    let addr_op = &operands[0];
-                    let addr = match &addr_op.value {
-                        AsmValue::Const(n) => AddressLike::Number(n.clone()),
-                        AsmValue::CurrentPosition => AddressLike::CurrentPosition,
-                        AsmValue::Symbol(id) => AddressLike::Symbol(*id),
-                       
-                        AsmValue::StringLiteral(_)
-                            => errors::parsing_error(&main_operator.source, source, "Expected an address value, got a string literal."),
-                        
-                        AsmValue::MacroParameter(_)
-                            => errors::parsing_error(&addr_op.source, source, "Macro symbol outside of a macro.")
-                    };
+                parse_numeric_arg!(0, size_op, size);
+                parse_numeric_arg!(1, value_op, value);
 
-                    let count_op = &operands[1];
-                    let count = match &count_op.value {
-                        AsmValue::Const(n) => NumberLike::from_number(n),
-                        AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                        AsmValue::Symbol(id) => NumberLike::Symbol(*id),
-                       
-                        AsmValue::StringLiteral(_)
-                            => errors::parsing_error(&count_op.source, source, "Expected a numeric value, got a string literal."),
+                nodes.push(AsmNode {
+                    value: AsmNodeValue::Instruction(AsmInstruction::DefineNumber { 
+                        size: (size, size_op.source.clone()), 
+                        value: (value, value_op.source.clone()) 
+                    }),
+                    source: main_operator.source.clone()
+                });
+            },
 
-                        AsmValue::MacroParameter(_)
-                            => errors::parsing_error(&count_op.source, source, "Macro symbol outside of a macro.")
-                    };
+            PseudoInstructions::DefineBytes => {
+                let mut bytes = Vec::with_capacity(operands.len());
 
-                    nodes.push(AsmNode {
-                        value: AsmNodeValue::Instruction(AsmInstruction::LoadStaticBytes { addr: (addr, addr_op.source.clone()), count: (count, count_op.source.clone()) }),
-                        source: main_operator.source.clone()
-                    });
-                },
+                for op in operands.iter() {
+                    parse_numeric_arg!(op, val);
+                    bytes.push((val, op.source.clone()));
+                }
 
-                ByteCodes::LoadConst1 => one_arg_numeric_instruction!(LoadConst1),
-                ByteCodes::LoadConst2 => one_arg_numeric_instruction!(LoadConst2),
-                ByteCodes::LoadConst4 => one_arg_numeric_instruction!(LoadConst4),
-                ByteCodes::LoadConst8 => one_arg_numeric_instruction!(LoadConst8),
+                nodes.push(AsmNode {
+                    value: AsmNodeValue::Instruction(AsmInstruction::DefineBytes { bytes }),
+                    source: main_operator.source.clone()
+                });
+            },
 
-                ByteCodes::LoadConstBytes => {
-                    let mut bytes = Vec::with_capacity(operands.len());
+            PseudoInstructions::DefineString => {
+                check_arg_count!(1);
 
-                    for op in operands.iter() {
-                        let val = match &op.value {
-                            AsmValue::Const(n) => NumberLike::from_number(n),
-                            AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                            AsmValue::Symbol(id) => NumberLike::Symbol(*id),
+                let op = &operands[0];
+                let static_id = match op.value {
+                    AsmValue::StringLiteral(id) => id,
 
-                            AsmValue::StringLiteral(_)
-                                => errors::parsing_error(&op.source, source, "Expected a byte value, got a string literal."),
+                    _ => errors::parsing_error(&op.source, source, "Expected a string literal.")
+                };
 
-                            AsmValue::MacroParameter(_)
-                                => errors::parsing_error(&op.source, source, "Macro symbol outside of a macro.")
-                        };
-
-                        bytes.push((val, op.source.clone()));
-                    }
-
-                    nodes.push(AsmNode {
-                        value: AsmNodeValue::Instruction(AsmInstruction::LoadConstBytes { bytes }),
-                        source: main_operator.source.clone()
-                    });
-                },
-
-                ByteCodes::Load1 => no_args_instruction!(Load1),
-                ByteCodes::Load2 => no_args_instruction!(Load2),
-                ByteCodes::Load4 => no_args_instruction!(Load4),
-                ByteCodes::Load8 => no_args_instruction!(Load8),
-                ByteCodes::LoadBytes => no_args_instruction!(LoadBytes),
-                ByteCodes::VirtualConstToReal => one_arg_address_instruction!(VirtualConstToReal),
-                ByteCodes::VirtualToReal => no_args_instruction!(VirtualToReal),
-                ByteCodes::Store1 => no_args_instruction!(Store1),
-                ByteCodes::Store2 => no_args_instruction!(Store2),
-                ByteCodes::Store4 => no_args_instruction!(Store4),
-                ByteCodes::Store8 => no_args_instruction!(Store8),
-                ByteCodes::StoreBytes => no_args_instruction!(StoreBytes),
-                ByteCodes::Memmove1 => no_args_instruction!(Memmove1),
-                ByteCodes::Memmove2 => no_args_instruction!(Memmove2),
-                ByteCodes::Memmove4 => no_args_instruction!(Memmove4),
-                ByteCodes::Memmove8 => no_args_instruction!(Memmove8),
-                ByteCodes::MemmoveBytes => no_args_instruction!(MemmoveBytes),
-                ByteCodes::Duplicate1 => no_args_instruction!(Duplicate1),
-                ByteCodes::Duplicate2 => no_args_instruction!(Duplicate2),
-                ByteCodes::Duplicate4 => no_args_instruction!(Duplicate4),
-                ByteCodes::Duplicate8 => no_args_instruction!(Duplicate8),
-                ByteCodes::DuplicateBytes => no_args_instruction!(DuplicateBytes),
-                ByteCodes::Malloc => no_args_instruction!(Malloc),
-                ByteCodes::Realloc => no_args_instruction!(Realloc),
-                ByteCodes::Free => no_args_instruction!(Free),
-                ByteCodes::Intr => no_args_instruction!(Intr),
-                ByteCodes::IntrConst => {
-                    if operands.len() != 1 {
-                        errors::parsing_error(&main_operator.source, source, "Operator expects exactly one argument.");
-                    }
-
-                    let op = &operands[0];
-                    let val = match &op.value {
-                        AsmValue::Const(n) => NumberLike::from_number(n),
-                        AsmValue::CurrentPosition => NumberLike::CurrentPosition,
-                        AsmValue::Symbol(id) => NumberLike::Symbol(*id),
-                       
-                        AsmValue::StringLiteral(_)
-                            => errors::parsing_error(&op.source, source, "Expected a numeric value, got a string literal."),
-
-                        AsmValue::MacroParameter(_)
-                            => errors::parsing_error(&op.source, source, "Macro symbol outside of a macro.")
-                    };
-
-                    nodes.push(AsmNode {
-                        value: AsmNodeValue::Instruction(AsmInstruction::IntrConst { code: (val, op.source.clone()) }),
-                        source: main_operator.source.clone()
-                    });
-                },
-                ByteCodes::ReadError => no_args_instruction!(ReadError),
-                ByteCodes::SetErrorConst => one_arg_numeric_instruction!(SetErrorConst),
-                ByteCodes::SetError => no_args_instruction!(SetError),
-                ByteCodes::Exit => no_args_instruction!(Exit),
-                ByteCodes::JumpConst => one_arg_address_instruction!(JumpConst),
-                ByteCodes::Jump => no_args_instruction!(Jump),
-                ByteCodes::JumpNotZeroConst1 => one_arg_address_instruction!(JumpNotZeroConst1),
-                ByteCodes::JumpNotZeroConst2 => one_arg_address_instruction!(JumpNotZeroConst2),
-                ByteCodes::JumpNotZeroConst4 => one_arg_address_instruction!(JumpNotZeroConst4),
-                ByteCodes::JumpNotZeroConst8 => one_arg_address_instruction!(JumpNotZeroConst8),
-                ByteCodes::JumpNotZero1 => no_args_instruction!(JumpNotZero1),
-                ByteCodes::JumpNotZero2 => no_args_instruction!(JumpNotZero2),
-                ByteCodes::JumpNotZero4 => no_args_instruction!(JumpNotZero4),
-                ByteCodes::JumpNotZero8 => no_args_instruction!(JumpNotZero8),
-                ByteCodes::JumpZeroConst1 => one_arg_address_instruction!(JumpZeroConst1),
-                ByteCodes::JumpZeroConst2 => one_arg_address_instruction!(JumpZeroConst2),
-                ByteCodes::JumpZeroConst4 => one_arg_address_instruction!(JumpZeroConst4),
-                ByteCodes::JumpZeroConst8 => one_arg_address_instruction!(JumpZeroConst8),
-                ByteCodes::JumpErrorConst => one_arg_address_instruction!(JumpErrorConst),
-                ByteCodes::JumpNoErrorConst => one_arg_address_instruction!(JumpNoErrorConst),
-                ByteCodes::JumpZero1 => no_args_instruction!(JumpZero1),
-                ByteCodes::JumpZero2 => no_args_instruction!(JumpZero2),
-                ByteCodes::JumpZero4 => no_args_instruction!(JumpZero4),
-                ByteCodes::JumpZero8 => no_args_instruction!(JumpZero8),
-                ByteCodes::JumpError => no_args_instruction!(JumpError),
-                ByteCodes::JumpNoError => no_args_instruction!(JumpNoError),
-                ByteCodes::Nop => no_args_instruction!(Nop),
-            }
+                nodes.push(AsmNode {
+                    value: AsmNodeValue::Instruction(AsmInstruction::DefineString { string: static_id }),
+                    source: main_operator.source.clone()
+                });
+            },
         },
 
         TokenValue::Bang => unreachable!("Handled before the match statement."),

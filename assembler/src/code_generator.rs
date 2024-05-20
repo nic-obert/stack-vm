@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::errors;
+use crate::symbol_table::StaticValue;
 use crate::{lang::AsmNode, symbol_table::SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNodeValue, Number, NumberLike, ENTRY_SECTION_NAME};
 use crate::tokenizer::{SourceCode, SourceToken};
@@ -34,7 +35,13 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
     let mut current_section: Option<&str> = None;
 
-    bytecode.push(ByteCodes::JumpConst as u8);
+    macro_rules! push_op {
+        ($op:ident) => {
+            bytecode.push(ByteCodes::$op as u8)
+        }
+    }
+
+    push_op!(JumpConst);
     bytecode.extend_from_slice([0u8; 8].as_ref()); // A placeholder for the entry point address, will be filled later
 
     for node in asm {
@@ -65,6 +72,9 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                 macro_rules! one_arg_address_instruction {
                     ($name:ident, $addr:ident) => {{
+
+                        bytecode.push(ByteCodes::$name as u8);
+
                         let operand: VirtualAddress = match $addr.0 {
 
                             AddressLike::Number(n) => {
@@ -86,13 +96,14 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             AddressLike::CurrentPosition => VirtualAddress(bytecode.len()),
                         };
 
-                        bytecode.push(ByteCodes::$name as u8);
                         bytecode.extend_from_slice(&operand.to_le_bytes());
                     }}
                 }
 
                 macro_rules! one_arg_number_instruction {
                     ($name:ident, $value:ident, $size:expr) => {{
+
+                        bytecode.push(ByteCodes::$name as u8);
 
                         let (bytes, minimum_size) = match &$value.0 {
 
@@ -115,7 +126,6 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             errors::invalid_argument(&$value.1, source, format!("Invalid constant value `{:?}`. Must be a {} bytes integer, but got length of {} bytes.", $value.0, $size, minimum_size).as_str());
                         }
 
-                        bytecode.push(ByteCodes::$name as u8);
                         bytecode.extend_from_slice(&bytes[0..$size]);
                     }}
                 }
@@ -139,12 +149,6 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             0
                         }
                     }};
-                }
-
-                macro_rules! push_op {
-                    ($op:ident) => {
-                        bytecode.push(ByteCodes::$op as u8)
-                    }
                 }
 
 
@@ -218,6 +222,10 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                     AsmInstruction::LoadConst8 { value } => one_arg_number_instruction!(LoadConst8, value, 8),
 
                     AsmInstruction::LoadConstBytes { bytes } => {
+                        
+                        push_op!(LoadConstBytes);
+
+                        bytecode.extend(bytes.len().to_le_bytes());
 
                         let mut value_bytes = Vec::with_capacity(bytes.len());
                         
@@ -251,8 +259,6 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             value_bytes.push(bytes_per_byte[0]);
                         }
 
-                        push_op!(LoadConstBytes);
-                        bytecode.extend(value_bytes.len().to_le_bytes());
                         bytecode.extend_from_slice(value_bytes.as_slice());
                     },
 
@@ -282,7 +288,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                     AsmInstruction::Realloc => push_op!(Realloc),
                     AsmInstruction::Free => push_op!(Free),
                     AsmInstruction::Intr => push_op!(Intr),
-                    AsmInstruction::IntrConst { code } => one_arg_number_instruction!(IntrConst, code, INTERRUPT_SIZE),
+                    AsmInstruction::IntrConst { value: code } => one_arg_number_instruction!(IntrConst, code, INTERRUPT_SIZE),
                     AsmInstruction::ReadError => push_op!(ReadError),
                     AsmInstruction::SetError => push_op!(SetError),
                     AsmInstruction::SetErrorConst { value } => one_arg_number_instruction!(SetErrorConst, value, ERROR_CODE_SIZE),
@@ -309,6 +315,81 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                     AsmInstruction::JumpNoError => push_op!(JumpNoError),
                     AsmInstruction::JumpErrorConst { addr } => one_arg_address_instruction!(JumpErrorConst, addr),
                     AsmInstruction::JumpNoErrorConst { addr } => one_arg_address_instruction!(JumpNoErrorConst, addr),
+                    
+                    AsmInstruction::DefineNumber { size, value } => {
+                        
+                        let number_size = match size.0 {
+                            NumberLike::Number(n, _size)
+                            => if let Number::Uint(n) = n {
+                                n as usize
+                            } else {
+                                errors::invalid_argument(&size.1, source, "Expected an unsigned integer as number size.");
+                            },
+                            NumberLike::CurrentPosition => bytecode.len(),
+                            NumberLike::Symbol(_)
+                                => errors::invalid_argument(&size.1, source, "Cannot use a symbol as number size in this context. Only literals are allowed."),
+                        };
+
+                        let mut number_value = match value.0 {
+                            NumberLike::Number(n, s) => n.as_le_bytes()[..s as usize].to_vec(),
+                            NumberLike::CurrentPosition => bytecode.len().to_le_bytes().to_vec(),
+                            NumberLike::Symbol(_)
+                                => errors::invalid_argument(&value.1, source, "Expected a numeric literal.")
+                        };
+
+                        if number_value.len() > number_size {
+                            errors::invalid_argument(&value.1, source, format!("Expected a number of size {}, but got a number of size {}", number_size, number_value.len()).as_str());
+                        }
+
+                        // Make the number value exactly the requested size
+                        if number_value.len() < number_size {
+                            number_value.extend(vec![0; number_size - number_value.len()]);
+                        }
+                    
+                        bytecode.extend(number_value);
+                    },
+
+                    AsmInstruction::DefineBytes { bytes } => {
+
+                        let mut value_bytes = Vec::with_capacity(bytes.len());
+                        
+                        for byte in bytes {
+
+                            let bytes_per_byte = match &byte.0 {
+                                
+                                NumberLike::Number(n, _size) => {
+                                    if matches!(n, Number::Float(_)) {
+                                        errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be an integer, not a float.", n).as_str())
+                                    }
+
+                                    n.as_le_bytes()
+                                },
+                                
+                                NumberLike::CurrentPosition => bytecode.len().to_le_bytes().to_vec(),
+
+                                NumberLike::Symbol(_) 
+                                    => errors::invalid_argument(&byte.1, source, "Expected a byte literal")
+                            };
+
+                            if bytes_per_byte.len() != 1 {
+                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, bytes_per_byte.len()).as_str())
+                            }
+
+                            value_bytes.push(bytes_per_byte[0]);
+                        }
+
+                        bytecode.extend(value_bytes);
+                    },
+
+                    AsmInstruction::DefineString { string } => {
+
+                        let string = match symbol_table.get_static(string) {
+                            StaticValue::StringLiteral(string) => string,
+                        };
+
+                        bytecode.extend(string.as_bytes());
+                    },
+
                     AsmInstruction::Nop => push_op!(Nop),
                 }
             }
