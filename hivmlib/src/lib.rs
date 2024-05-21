@@ -112,8 +112,8 @@ declare_instructions! {
     Load8 load8,
     LoadBytes loadn,
     
-    VirtualConstToReal virtualconsttoreal,
-    VirtualToReal virtualtoreal,
+    VirtualConstToReal vconsttr,
+    VirtualToReal vtr,
 
     Store1 store1,
     Store2 store2,
@@ -186,6 +186,8 @@ pub enum Interrupts {
     PrintBytes,
     PrintChar,
     PrintString,
+    PrintStaticBytes,
+    PrintStaticString,
     ReadBytes,
     ReadAll,
 }

@@ -6,7 +6,7 @@ Project Description
 
 ### Todo
 
-- [ ] add interrupts for printing static data without needing to convert from virtual address to real  
+- [ ] Make a rust tool to automatically generate asm library files that desbribe the architecture (interrupts, basic sizes and constants...)  
 - [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
 - [ ] write assembly documentation  
@@ -17,10 +17,11 @@ Project Description
 
 ### In Progress
 
-- [ ] shorten virtual address instruction names  
 
 ### Done ✓
 
+- [x] add interrupts for printing static data without needing to convert from virtual address to real  
+- [x] shorten virtual address instruction names  
 - [x] change io interrupts to print from pointer instead of from the stack  
 - [x] implement io interface through interrupts  
 - [x] add pseudo-instructions to set bytes in-place  

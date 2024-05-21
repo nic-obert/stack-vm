@@ -933,6 +933,22 @@ impl VM {
                     print!("{}", string);
                 }
             },
+            Interrupts::PrintStaticBytes => {
+                let count = self.opstack.pop_8() as usize;
+                let bytes_vaddr = VirtualAddress(self.opstack.pop_8() as usize);
+                let bytes = program.get_static_bytes(bytes_vaddr, count);
+                print!("{:?}", bytes);
+            },
+            Interrupts::PrintStaticString => {
+                let length = self.opstack.pop_8() as usize;
+                let str_vaddr = VirtualAddress(self.opstack.pop_8() as usize);
+                let string = unsafe {
+                    std::str::from_utf8_unchecked(
+                        program.get_static_bytes(str_vaddr, length)
+                    )
+                };
+                print!("{}", string);
+            },
             Interrupts::ReadBytes => {
                 let n = self.opstack.pop_8() as usize;
                 let mut buf = Vec::with_capacity(n);

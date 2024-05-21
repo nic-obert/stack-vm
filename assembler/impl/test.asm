@@ -1,11 +1,11 @@
 
 .msg
-db 10 10 10 10
+ds "Hi\n"
 
 .text
 
-    virtualconsttoreal msg
-    loadconst8 4
-    intrconst 6
+    loadconst8 msg
+    loadconst8 3
+    intrconst 8
     
 
