@@ -6,6 +6,7 @@ Project Description
 
 ### Todo
 
+- [ ] add interrupts for printing static data without needing to convert from virtual address to real  
 - [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
 - [ ] write assembly documentation  
@@ -16,10 +17,12 @@ Project Description
 
 ### In Progress
 
-- [ ] implement io interface through interrupts  
+- [ ] shorten virtual address instruction names  
 
 ### Done ✓
 
+- [x] change io interrupts to print from pointer instead of from the stack  
+- [x] implement io interface through interrupts  
 - [x] add pseudo-instructions to set bytes in-place  
 - [x] implement value definition macros  
 - [x] implement macros  

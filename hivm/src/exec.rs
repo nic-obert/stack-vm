@@ -3,7 +3,7 @@ use hivmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddre
 
 use std::io::Read;
 use std::mem::{self, MaybeUninit};
-use std::{alloc, io};
+use std::{alloc, io, slice};
 use std::ptr;
 
 
@@ -913,7 +913,10 @@ impl VM {
             },
             Interrupts::PrintBytes => {
                 let count = self.opstack.pop_8() as usize;
-                let bytes = self.opstack.pop_bytes(count);
+                let bytes_addr = self.opstack.pop_8() as *const u8;
+                let bytes = unsafe {
+                    slice::from_raw_parts(bytes_addr, count)
+                };
                 print!("{:?}", bytes);
             },
             Interrupts::PrintChar => {
@@ -922,12 +925,13 @@ impl VM {
             },
             Interrupts::PrintString => {
                 let length = self.opstack.pop_8() as usize;
-                let bytes = self.opstack.pop_bytes(length);
+                let str_addr = self.opstack.pop_8() as *const u8;
                 // Use unchecked because it's the programmer's responsibility to ensure the string is valid
-                let string = unsafe {
-                    std::str::from_utf8_unchecked(bytes)
-                };
-                print!("{}", string);
+                unsafe {
+                    let string = slice::from_raw_parts(str_addr, length);
+                    let string = std::str::from_utf8_unchecked(string);
+                    print!("{}", string);
+                }
             },
             Interrupts::ReadBytes => {
                 let n = self.opstack.pop_8() as usize;
@@ -940,7 +944,7 @@ impl VM {
                 } else {
                     self.opstack.push_bytes(&buf);
                 }
-            }
+            },
             Interrupts::ReadAll => {
                 let mut buf = Vec::new();
                 match io::stdin().read_to_end(&mut buf) {
@@ -950,7 +954,7 @@ impl VM {
                     },
                     Err(_err) => self.error_code = ErrorCodes::GenericError
                 }
-            }
+            },
 
         }
     }

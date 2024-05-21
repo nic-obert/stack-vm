@@ -1,10 +1,11 @@
 
-.num
-dn 4 9081
+.msg
+db 10 10 10 10
 
 .text
 
-    loadstatic4 num
-    intrconst 2
+    virtualconsttoreal msg
+    loadconst8 4
+    intrconst 6
     
 

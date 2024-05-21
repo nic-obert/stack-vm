@@ -355,27 +355,27 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                         
                         for byte in bytes {
 
-                            let bytes_per_byte = match &byte.0 {
+                            let (num_size, num) = match &byte.0 {
                                 
-                                NumberLike::Number(n, _size) => {
-                                    if matches!(n, Number::Float(_)) {
-                                        errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be an integer, not a float.", n).as_str())
-                                    }
+                                NumberLike::Number(n, size) => {
+                                    let num = n.as_uint().unwrap_or_else(
+                                        || errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be an unsigned integer.", n).as_str())
+                                    );
 
-                                    n.as_le_bytes()
+                                    (*size, num as u8)
                                 },
                                 
-                                NumberLike::CurrentPosition => bytecode.len().to_le_bytes().to_vec(),
+                                NumberLike::CurrentPosition => (ADDRESS_SIZE as u8, bytecode.len() as u8),
 
                                 NumberLike::Symbol(_) 
                                     => errors::invalid_argument(&byte.1, source, "Expected a byte literal")
                             };
 
-                            if bytes_per_byte.len() != 1 {
-                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, bytes_per_byte.len()).as_str())
+                            if num_size != 1 {
+                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, num_size).as_str())
                             }
 
-                            value_bytes.push(bytes_per_byte[0]);
+                            value_bytes.push(num);
                         }
 
                         bytecode.extend(value_bytes);

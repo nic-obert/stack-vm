@@ -621,3 +621,4 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
     nodes.shrink_to_fit();
     nodes
 }
+
