@@ -10,7 +10,8 @@ use std::ptr;
 struct Stack {
     /// Raw pointer to the top of the stack. Modifying this pointer will directly modify the stack.
     tos: *mut u8,
-    stack: Box<[u8]>,
+    /// Owned pointer to the stack. The stack is mutated thorugh the `tos` pointer.
+    _stack: Box<[u8]>,
 }
 
 impl Stack {
@@ -25,7 +26,7 @@ impl Stack {
             tos: unsafe {
                 stack.as_mut_ptr().add(stack.len())
             },
-            stack
+            _stack: stack
         }
     }
 
@@ -35,9 +36,9 @@ impl Stack {
     }
 
 
-    pub unsafe fn tos_mut(&mut self) -> *mut u8 {
-        self.tos
-    }
+    // pub unsafe fn tos_mut(&mut self) -> *mut u8 {
+    //     self.tos
+    // }
 
 
     pub fn peek_1(&self) -> u8 {
@@ -68,11 +69,11 @@ impl Stack {
     }
 
 
-    pub fn peek_bytes(&self, count: usize) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(self.tos.byte_sub(count), count)
-        }
-    }
+    // pub fn peek_bytes(&self, count: usize) -> &[u8] {
+    //     unsafe {
+    //         std::slice::from_raw_parts(self.tos.byte_sub(count), count)
+    //     }
+    // }
 
 
     pub fn push_1(&mut self, byte: u8) {
@@ -288,8 +289,6 @@ pub struct VM {
 
     /// Operation stack. Stores the operands and results of operations.
     opstack: Stack,
-    /// Variable stack. Stores the variables in the stack frame.
-    varstack: Stack,
     /// Stores the last error code.
     error_code: ErrorCodes
 
@@ -298,16 +297,14 @@ pub struct VM {
 // 1 KB should be enough for the operation stack since it stores temporary values (operands and results) 
 // which should not be too large anyway. When processing big chunks of data, we usually use pointers to the data
 // instead of copying the whole data itself.
-const OPSTACK_SIZE: usize = 1024; // 1 KB
-const DEFAULT_VARSTACK_SIZE: usize = 1024 * 1024; // 1 MB
+const DEFAULT_OPSTACK_SIZE: usize = 1024; // 1 KB
 
 impl VM {
 
     /// Instantiate a new VM with a given stack size.
-    pub fn new(stack_size: Option<usize>) -> Self {
+    pub fn new(opstack_size: Option<usize>) -> Self {
         Self {
-            varstack: Stack::new(stack_size.unwrap_or(DEFAULT_VARSTACK_SIZE)),
-            opstack: Stack::new(OPSTACK_SIZE),
+            opstack: Stack::new(opstack_size.unwrap_or(DEFAULT_OPSTACK_SIZE)),
             error_code: ErrorCodes::NoError
         }
     }

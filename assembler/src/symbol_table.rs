@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::collections::HashMap;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, UnsafeCell};
 use std::borrow::Cow;
 
 use crate::lang::AsmValue;
@@ -12,21 +12,6 @@ pub struct Symbol<'a> {
     pub source: Rc<SourceToken<'a>>,
     pub name: &'a str,
     pub value: Option<AsmValue>,
-
-}
-
-
-struct Scope<'a> {
-    symbols: HashMap<&'a str, SymbolID>,
-}
-
-impl Scope<'_> {
-
-    pub fn new() -> Self {
-        Self {
-            symbols: HashMap::new()
-        }
-    }
 
 }
 
@@ -45,9 +30,9 @@ pub enum StaticValue<'a> {
 
 pub struct SymbolTable<'a> {
 
-    scopes: Vec<Scope<'a>>,
-    symbols: Vec<RefCell<Symbol<'a>>>,
-    statics: Vec<StaticValue<'a>>
+    symbols: UnsafeCell<Vec<RefCell<Symbol<'a>>>>,
+    symbol_ids: UnsafeCell<HashMap<&'a str, SymbolID>>,
+    statics: UnsafeCell<Vec<RefCell<StaticValue<'a>>>>,
 
 }
 
@@ -55,67 +40,69 @@ impl<'a> SymbolTable<'a> {
 
     pub fn new() -> Self {
         Self {
-            scopes: vec![Scope::new()], // Start with the global scope already pushed
-            symbols: Vec::new(),
-            statics: Vec::new()
+            symbols: Default::default(),
+            symbol_ids: Default::default(),
+            statics: Default::default(),
         }
     }
 
 
-    pub fn declare_static(&mut self, value: StaticValue<'a>) -> StaticID {
-        let id = self.statics.len();
-        self.statics.push(value);
+    pub fn declare_static(&self, value: StaticValue<'a>) -> StaticID {
+
+        let statics = unsafe { &mut *self.statics.get() };
+
+        let id = statics.len();
+        statics.push(RefCell::new(value));
         StaticID(id)
     }
 
     
-    pub fn get_static(&self, id: StaticID) -> &StaticValue<'a> {
-        &self.statics[id.0]
+    pub fn get_static(&'a self, id: StaticID) -> Ref<'a, StaticValue<'a>> {
+        let statics = unsafe { &*self.statics.get() };
+        Ref::map(statics[id.0].borrow(), |val| val)
     }
-
-    
-    // pub fn push_scope(&mut self) {
-    //     self.scopes.push(Scope::new());
-    // }
-
-
-    // pub fn pop_scope(&mut self) {
-    //     self.scopes.pop();
-    // }
 
 
     pub fn define_symbol(&self, id: SymbolID, value: Option<AsmValue>, definition_source: Rc<SourceToken<'a>>) {
-        let mut symbol = self.symbols[id.0].borrow_mut();
+        
+        let symbols = unsafe { &mut *self.symbols.get() };
+        
+        let mut symbol = symbols[id.0].borrow_mut();
         symbol.value = value;
         symbol.source = definition_source;
     }
 
 
-    /// Returns None if the symbol is already declared in the current scope.
-    pub fn declare_symbol(&mut self, name: &'a str, symbol: Symbol<'a>) -> Result<SymbolID, &RefCell<Symbol<'a>>> {
+    /// Declares the given symbol and returns the symbol id if the symbol wasn't declared before.
+    /// If the symbol was already declared, return the previous symbol.
+    pub fn declare_symbol(&self, name: &'a str, symbol: Symbol<'a>) -> Result<SymbolID, &RefCell<Symbol<'a>>> {
 
-        let scope = self.scopes.last_mut().unwrap();
+        let symbols = unsafe { &mut *self.symbols.get() };
+        let symbol_ids = unsafe { &mut *self.symbol_ids.get() };
 
-        let symbol_id = SymbolID(self.symbols.len());
-        if let Some(old_symbol) = scope.symbols.insert(name, symbol_id) {
-            return Err(&self.symbols[old_symbol.0]);
+        let symbol_id = SymbolID(symbols.len());
+
+        if let Some(prev) = symbol_ids.insert(name, symbol_id) {
+            return Err(&symbols[prev.0])
         }
 
-        self.symbols.push(RefCell::new(symbol));
+        symbols.push(RefCell::new(symbol));
         Ok(symbol_id)
     }
 
 
     pub fn get_symbol_id(&self, name: &str) -> Option<SymbolID> {
-        self.scopes.iter().rev().find_map(|scope| scope.symbols.get(name).cloned())
+        let symbol_ids = unsafe { &*self.symbol_ids.get() };
+        symbol_ids.get(name).cloned()
     }
 
 
     /// Returns the symbol with the given id.
     /// Assumes the symbol exists in the symbol table and is reachable.
-    /// Since the symbol id was issued by the symbol table itself, there shouldn0t be unmatched symbol ids.
+    /// Since the symbol id was issued by the symbol table itself, there shouldn't be unmatched symbol ids.
     pub fn get_symbol(&self, id: SymbolID) -> &RefCell<Symbol<'a>> {
-        &self.symbols[id.0]
+        let symbols = unsafe { &*self.symbols.get() };
+        &symbols[id.0]
     }
 
 }

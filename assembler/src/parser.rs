@@ -1,9 +1,13 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::ops::Deref;
+use std::path::Path;
 
 use hivmlib::ByteCodes;
 
-use crate::tokenizer::{SourceCode, Token, TokenList, TokenValue};
-use crate::symbol_table::{SymbolID, SymbolTable};
+use crate::assembler::{self, ModuleManager};
+use crate::tokenizer::{Token, TokenLines, TokenList, TokenValue};
+use crate::symbol_table::{StaticValue, SymbolID, SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmValue, Number, NumberLike, PseudoInstructions};
 use crate::errors;
 
@@ -24,19 +28,15 @@ use crate::errors;
 // }
 
 
-fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, source: SourceCode) -> Box<[AsmOperand<'a>]> {
+fn parse_operands<'a>(mut tokens: TokenList<'a>, symbol_table: &SymbolTable, module_manager: &'a ModuleManager<'a>) -> Box<[AsmOperand<'a>]> {
     
     // TODO: implement in-line constant math and eventual in-line operators.
 
-    // Allocate the maximum capacity needed for the operands. Since most operations will not contain
-    // in-line operations, this will avoid reallocations and space won't be wasted for most cases.
-    let mut operands = Vec::with_capacity(tokens.len());
+    let mut operands = Vec::new();
 
     // The parsing occurs on a left-to-right manner for now.
 
-    let mut i = 0;
-
-    while let Some(token) = tokens.get(i) {
+    while let Some(token) = tokens.pop_front() {
 
         macro_rules! push_op {
             ($op:expr, $source:expr) => {
@@ -55,15 +55,14 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
             TokenValue::Dollar => push_op!(AsmValue::CurrentPosition, token),
             
             TokenValue::Bang => {
-                i += 1;
 
-                let next_token = tokens.get(i).unwrap_or_else(
-                    || errors::parsing_error(&token.source, source, "Missing macro name after `!`."));
+                let next_token = tokens.pop_front().unwrap_or_else(
+                    || errors::parsing_error(&token.source, module_manager, "Missing macro name after `!`."));
 
                 let symbol_id = if let TokenValue::Identifier(id) = next_token.value {
                     id
                 } else {
-                    errors::parsing_error(&next_token.source, source, "Expected a macro name after `!`.")
+                    errors::parsing_error(&next_token.source, module_manager, "Expected a macro name after `!`.")
                 };
 
                 let symbol_value = symbol_table.get_symbol(symbol_id)
@@ -71,21 +70,20 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
                     .value
                     .clone()
                     .unwrap_or_else(
-                        || errors::parsing_error(&next_token.source, source, "Macro has no value."));
+                        || errors::parsing_error(&next_token.source, module_manager, "Macro has no value."));
 
                 push_op!(symbol_value, token);              
             },
 
             TokenValue::Mod => {
-                i += 1;
 
-                let next_token = tokens.get(i).unwrap_or_else(
-                    || errors::parsing_error(&token.source, source, "Missing macro parameter name after `%`."));
+                let next_token = tokens.pop_front().unwrap_or_else(
+                    || errors::parsing_error(&token.source, module_manager, "Missing macro parameter name after `%`."));
 
                 let symbol_id = if let TokenValue::Identifier(id) = next_token.value {
                     id
                 } else {
-                    errors::parsing_error(&next_token.source, source, "Expected a macro parameter name after `%`.")
+                    errors::parsing_error(&next_token.source, module_manager, "Expected a macro parameter name after `%`.")
                 };
 
                 push_op!(AsmValue::MacroParameter(symbol_id), token);
@@ -103,10 +101,9 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
             TokenValue::Colon |
             TokenValue::EndMacro |
             TokenValue::ValueMacroDef
-                => errors::parsing_error(&token.source, source, "Token cannot be used as an operand.")
+                => errors::parsing_error(&token.source, module_manager, "Token cannot be used as an operand.")
         }
 
-        i += 1;
     }
 
     operands.into_boxed_slice()
@@ -115,19 +112,19 @@ fn parse_operands<'a>(tokens: &'a [Token<'a>], symbol_table: &SymbolTable, sourc
 
 struct MacroDef<'a> {
     args: Box<[SymbolID]>,
-    body: Box<[(&'a Token<'a>, Box<[AsmOperand<'a>]>)]>
+    body: Box<[(Token<'a>, Box<[AsmOperand<'a>]>)]>
 }
 
 
 type MacroMap<'a> = HashMap<SymbolID, MacroDef<'a>>;
 
 
-fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>, nodes: &mut Vec<AsmNode<'a>>, macros: &mut MacroMap<'a>, token_lines: &'a [TokenList<'a>], line_index: &mut usize, source: SourceCode, symbol_table: &'a SymbolTable<'a>) {
+fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nodes: &mut Vec<AsmNode<'a>>, macros: &mut MacroMap<'a>, token_lines: &mut TokenLines<'a>, module_manager: &'a ModuleManager<'a>, symbol_table: &'a SymbolTable<'a>) {
 
     macro_rules! check_arg_count {
         ($required:expr) => {
             if operands.len() != $required {
-                errors::parsing_error(&main_operator.source, source, format!("Operator expects exactly {} arguments, but {} were given.", $required, operands.len()).as_str())
+                errors::parsing_error(&main_operator.source, module_manager, format!("Operator expects exactly {} arguments, but {} were given.", $required, operands.len()).as_str())
             }
         }
     }
@@ -135,17 +132,17 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
     // Handle an eventual macro call and expand it
     if matches!(main_operator.value, TokenValue::Bang) {
         let macro_name = operands.first().unwrap_or_else(
-            || errors::parsing_error(&main_operator.source, source, "Macro call must have a macro name after the !.")
+            || errors::parsing_error(&main_operator.source, module_manager, "Macro call must have a macro name after the !.")
         );
 
         let macro_id = if let AsmValue::Symbol(id) = macro_name.value {
             id
         } else {
-            errors::parsing_error(&macro_name.source, source, "Expected a symbol as macro name.")
+            errors::parsing_error(&macro_name.source, module_manager, "Expected a symbol as macro name.")
         };
 
         let macro_def = macros.get(&macro_id).unwrap_or_else(
-            || errors::undefined_symbol(&macro_name.source, source));
+            || errors::undefined_symbol(&macro_name.source, module_manager));
 
         // Skip the macro name
         let operands = &operands[1..];
@@ -160,7 +157,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
 
         // Expand the macro
 
-        let mut expanded_macro = Vec::with_capacity(macro_def.body.len());
+        let mut expanded_macro: Vec<(Token<'a>, Box<[AsmOperand]>)> = Vec::with_capacity(macro_def.body.len());
 
         // TODO: maybe eventually use a Cow to avoid useless cloning
         for (body_line_main_operator, raw_body_line_operands) in macro_def.body.iter() {
@@ -170,7 +167,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 body_line_operands.push(
                     if let AsmValue::MacroParameter(id) = op.value {
                         (*macro_args.get(&id).unwrap_or_else(
-                            || errors::parsing_error(&op.source, source, "Macro symbol not found.")
+                            || errors::parsing_error(&op.source, module_manager, "Macro symbol not found.")
                         )).clone()
                     } else {
                         op.clone()
@@ -178,12 +175,12 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 )
             }
 
-            expanded_macro.push((*body_line_main_operator, body_line_operands.into_boxed_slice()));
+            expanded_macro.push((body_line_main_operator.clone(), body_line_operands.into_boxed_slice()));
         }
 
         // Once the macro is expanded, parse it normally
         for (main_operator, operands) in expanded_macro {
-            parse_line(main_operator, operands, nodes, macros, token_lines, line_index, source, symbol_table);
+            parse_line(main_operator, operands, nodes, macros, token_lines, module_manager, symbol_table);
         }
 
         // The macro has been expanded and parsed, there's nothing more to do
@@ -213,10 +210,10 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 AsmValue::Symbol(id) => NumberLike::Symbol(*id),
                
                 AsmValue::StringLiteral(_)
-                    => errors::parsing_error(&$op.source, source, "Expected a numeric value, got a string literal."),
+                    => errors::parsing_error(&$op.source, module_manager, "Expected a numeric value, got a string literal."),
 
                 AsmValue::MacroParameter(_)
-                    => errors::parsing_error(&$op.source, source, "Macro parameter outside of a macro definition.")
+                    => errors::parsing_error(&$op.source, module_manager, "Macro parameter outside of a macro definition.")
             };
         };
     }
@@ -243,10 +240,10 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 AsmValue::Symbol(id) => AddressLike::Symbol(*id),
                
                 AsmValue::StringLiteral(_)
-                    => errors::parsing_error(&$op.source, source, "Expected an address value, got a string literal."),
+                    => errors::parsing_error(&$op.source, module_manager, "Expected an address value, got a string literal."),
 
                 AsmValue::MacroParameter(_)
-                    => errors::parsing_error(&$op.source, source, "Macro parameter outside of a macro definition.")
+                    => errors::parsing_error(&$op.source, module_manager, "Macro parameter outside of a macro definition.")
             };
         };
     }
@@ -273,7 +270,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
             let symbol_id = if let AsmValue::Symbol(id) = op.value {
                 id
             } else {
-                errors::parsing_error(&op.source, source, "Expected a symbol as label name.");
+                errors::parsing_error(&op.source, module_manager, "Expected a symbol as label name.");
             };
 
             // Reduce the scope of `symbol` to comply with the dynamic borrow checker
@@ -282,7 +279,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
 
                 // Disallow defining a label more than once.
                 if symbol.value.is_some() {
-                    errors::symbol_redeclaration(&op.source, source, &symbol);
+                    errors::symbol_redeclaration(&op.source, module_manager, &symbol);
                 }
 
                 nodes.push(AsmNode { 
@@ -301,13 +298,13 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
             // Syntax: %= macro_name value
 
             let macro_name = operands.first().unwrap_or_else(
-                || errors::parsing_error(&main_operator.source, source, "Macro value declaration must have a name after the %=.")
+                || errors::parsing_error(&main_operator.source, module_manager, "Macro value declaration must have a name after the %=.")
             );
 
             let macro_id = if let AsmValue::Symbol(id) = macro_name.value {
                 id
             } else {
-                errors::parsing_error(&macro_name.source, source, "Expected a symbol as macro name.")
+                errors::parsing_error(&macro_name.source, module_manager, "Expected a symbol as macro name.")
             };
 
             check_arg_count!(2);
@@ -327,20 +324,20 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
 
 
             let macro_name = operands.first().unwrap_or_else(
-                || errors::parsing_error(&main_operator.source, source, "Macro declaration must have a name after the %.")
+                || errors::parsing_error(&main_operator.source, module_manager, "Macro declaration must have a name after the %.")
             );
 
             let macro_id = if let AsmValue::Symbol(id) = macro_name.value {
                 id
             } else {
-                errors::parsing_error(&macro_name.source, source, "Expected a symbol as macro name.")
+                errors::parsing_error(&macro_name.source, module_manager, "Expected a symbol as macro name.")
             };
 
             let params: Vec<SymbolID> = operands[1..].iter().map(|op| {
                 if let AsmValue::Symbol(id) = op.value {
                     id
                 } else {
-                    errors::parsing_error(&op.source, source, "Expected a symbol as macro parametr.")
+                    errors::parsing_error(&op.source, module_manager, "Expected a symbol as macro parametr.")
                 }
             }).collect();
 
@@ -350,13 +347,12 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
             
             loop {
 
-                *line_index += 1;
-
-                let line = token_lines.get(*line_index).unwrap_or_else(
-                    || errors::parsing_error(&main_operator.source, source, "Macro definition must end with `%endmacro`."));
+                let mut line = token_lines.pop_front().unwrap_or_else(
+                    || errors::parsing_error(&main_operator.source, module_manager, "Macro definition must end with `%endmacro`.")
+                );
                 
-                let body_main_operator = &line[0];
-                let body_operands = parse_operands(&line[1..], symbol_table, source);
+                let body_main_operator = line.pop_front().unwrap();
+                let body_operands = parse_operands(line, symbol_table, module_manager);
                 
                 if matches!(body_main_operator.value, TokenValue::EndMacro) {
                     break;
@@ -371,7 +367,7 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 body: body.into_boxed_slice()
             }).is_some() {
                 // Disallow redefining a macro.
-                errors::symbol_redeclaration(&main_operator.source, source, &symbol_table.get_symbol(macro_id).borrow());
+                errors::symbol_redeclaration(&main_operator.source, module_manager, &symbol_table.get_symbol(macro_id).borrow());
             }
         },
 
@@ -382,14 +378,14 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
             let symbol_id = if let AsmValue::Symbol(id) = op.value {
                 id
             } else {
-                errors::parsing_error(&op.source, source, "Expected a symbol as section name.");
+                errors::parsing_error(&op.source, module_manager, "Expected a symbol as section name.");
             };
 
             { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
                 let symbol = symbol_table.get_symbol(symbol_id).borrow();
 
                 if symbol.value.is_some() {
-                    errors::symbol_redeclaration(&op.source, source, &symbol);
+                    errors::symbol_redeclaration(&op.source, module_manager, &symbol);
                 }
                 
                 nodes.push(AsmNode {
@@ -564,13 +560,32 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
                 let static_id = match op.value {
                     AsmValue::StringLiteral(id) => id,
 
-                    _ => errors::parsing_error(&op.source, source, "Expected a string literal.")
+                    _ => errors::parsing_error(&op.source, module_manager, "Expected a string literal.")
                 };
 
                 nodes.push(AsmNode {
-                    value: AsmNodeValue::Instruction(AsmInstruction::DefineString { string: static_id }),
+                    value: AsmNodeValue::Instruction(AsmInstruction::DefineString { static_id }),
                     source: main_operator.source.clone()
                 });
+            },
+
+            PseudoInstructions::IncludeAsm => {
+                check_arg_count!(1);
+
+                let op = &operands[0];
+                let static_id = match op.value {
+                    AsmValue::StringLiteral(id) => id,
+
+                    _ => errors::parsing_error(&op.source, module_manager, "Expected a string literal.")
+                };
+
+                // let static_value = symbol_table.get_static(static_id);
+                // let path = match static_value.deref() {
+                //     StaticValue::StringLiteral(path) => Path::new(path.as_ref()),
+                // };
+
+                // let include_asm = assembler::load_unit_asm(path, symbol_table, module_manager);
+                // nodes.extend(include_asm);
             },
         },
 
@@ -587,13 +602,13 @@ fn parse_line<'a>(main_operator: &'a Token<'a>, operands: Box<[AsmOperand<'a>]>,
         TokenValue::CharLiteral(_) |
         TokenValue::Colon |
         TokenValue::EndMacro
-            => errors::parsing_error(&main_operator.source, source, "Token cannot be used as a main operator.")
+            => errors::parsing_error(&main_operator.source, module_manager, "Token cannot be used as a main operator.")
     }
     
 }
 
 
-pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_table: &'a SymbolTable<'a>) -> Vec<AsmNode<'a>> {
+pub fn parse<'a>(mut token_lines: TokenLines<'a>, symbol_table: &'a SymbolTable<'a>, module_manager: &'a ModuleManager<'a>) -> Vec<AsmNode<'a>> {
 
     // A good estimate for the number of nodes is the number of assembly lines. This is because an assembly line 
     // usually translates to a single instruction. This should avoid reallocations in most cases.
@@ -601,21 +616,15 @@ pub fn parse<'a>(token_lines: &'a [TokenList<'a>], source: SourceCode, symbol_ta
 
     let mut macros = MacroMap::new();
 
-    let mut i: usize = 0;
-
-
-    while let Some(line) = token_lines.get(i) {
+    while let Some(mut line) = token_lines.pop_front() {
 
         // Assume the line is not empty since the lexer has already filtered out empty lines
 
-        let main_operator = &line[0];
+        let main_operator = line.pop_front().unwrap();
 
-        let operands = parse_operands(&line[1..], symbol_table, source);
+        let operands = parse_operands(line, symbol_table, module_manager);
 
-        parse_line(main_operator, operands, &mut nodes, &mut macros, token_lines, &mut i, source, symbol_table);
-
-        // Next line
-        i += 1;
+        parse_line(main_operator, operands, &mut nodes, &mut macros, &mut token_lines, module_manager, symbol_table);
     }
 
     nodes.shrink_to_fit();

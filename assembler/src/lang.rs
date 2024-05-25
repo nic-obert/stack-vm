@@ -1,4 +1,8 @@
+use std::mem;
 use std::rc::Rc;
+
+use hivmlib::ByteCodes;
+use static_assertions::const_assert_eq;
 
 use crate::tokenizer::SourceToken;
 use crate::symbol_table::{StaticID, SymbolID, SymbolTable};
@@ -96,6 +100,7 @@ pub enum AddressLike {
 
 type AddressOperand<'a> = (AddressLike, Rc<SourceToken<'a>>);
 type NumberOperand<'a> = (NumberLike, Rc<SourceToken<'a>>);
+type StringOperand<'a> = (StaticID, Rc<SourceToken<'a>>);
 
 
 /// Representation of assembly instructions and their operands
@@ -211,14 +216,15 @@ pub enum AsmInstruction<'a> {
 
     DefineNumber { size: NumberOperand<'a>, value: NumberOperand<'a> },
     DefineBytes { bytes: Vec<NumberOperand<'a>> },
-    DefineString { string: StaticID },
+    DefineString { static_id: StaticID },
+
+    IncludeAsm { path: StringOperand<'a> },
 
     Nop
 
 }
 
-// The check below is not valid anymore because pseudo-instructions are not included in the VM's lib file.
-// const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>());
+const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>() + mem::variant_count::<PseudoInstructions>());
 
 
 macro_rules! declare_pseudo_instructions {
@@ -250,7 +256,8 @@ declare_pseudo_instructions! {
 
     DefineNumber dn,
     DefineBytes db,
-    DefineString ds
+    DefineString ds,
+    IncludeAsm include
 
 }
 

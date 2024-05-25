@@ -1,7 +1,9 @@
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::path::Path;
 use std::borrow::Cow;
 
+use crate::assembler::ModuleManager;
 use crate::symbol_table::{StaticID, StaticValue, Symbol, SymbolID, SymbolTable};
 use crate::lang::{Number, PseudoInstructions};
 use crate::errors;
@@ -12,7 +14,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 
-pub type TokenList<'a> = Vec<Token<'a>>;
+pub type TokenList<'a> = VecDeque<Token<'a>>;
 
 
 lazy_static! {
@@ -133,7 +135,7 @@ fn lex<'a>(source: SourceCode<'a>, unit_path: &'a Path) -> impl Iterator<Item = 
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token<'a> {
     pub source: Rc<SourceToken<'a>>,
     pub value: TokenValue,
@@ -147,7 +149,7 @@ impl std::fmt::Display for Token<'_> {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenValue {
     StringLiteral(StaticID),
     CharLiteral(char),
@@ -226,11 +228,14 @@ fn is_decimal_numeric(c: char) -> bool {
 }
 
 
-pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &mut SymbolTable<'a>) -> Vec<TokenList<'a>> {
+pub type TokenLines<'a> = VecDeque<TokenList<'a>>;
+
+
+pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &SymbolTable<'a>, module_manager: &'a ModuleManager<'a>) -> TokenLines<'a> {
     
     let raw_lines = lex(source, unit_path);
 
-    let mut lines = Vec::with_capacity(source.len());
+    let mut lines = TokenLines::with_capacity(source.len());
 
     for raw_line in raw_lines {
 
@@ -266,23 +271,23 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
                 "@" => TokenValue::At,
 
                 string if string.starts_with("0x") => {
-                    TokenValue::Number(Number::Uint(u64::from_str_radix(&string[2..], 16).unwrap_or_else(|err| errors::parsing_error(token, source, err.to_string().as_str()))))
+                    TokenValue::Number(Number::Uint(u64::from_str_radix(&string[2..], 16).unwrap_or_else(|err| errors::tokenizer_error(token, source, err.to_string().as_str()))))
                 },
 
                 string if string.starts_with(is_decimal_numeric) => {
                     TokenValue::Number(if string.contains('.') {
-                        Number::Float(string.parse::<f64>().unwrap_or_else(|err| errors::parsing_error(token, source, err.to_string().as_str())))
+                        Number::Float(string.parse::<f64>().unwrap_or_else(|err| errors::tokenizer_error(token, source, err.to_string().as_str())))
                     } else if string.starts_with('-') {
-                        Number::Int(string.parse::<i64>().unwrap_or_else(|err| errors::parsing_error(token, source, err.to_string().as_str())))
+                        Number::Int(string.parse::<i64>().unwrap_or_else(|err| errors::tokenizer_error(token, source, err.to_string().as_str())))
                     } else {
-                        Number::Uint(string.parse::<u64>().unwrap_or_else(|err| errors::parsing_error(token, source, err.to_string().as_str())))
+                        Number::Uint(string.parse::<u64>().unwrap_or_else(|err| errors::tokenizer_error(token, source, err.to_string().as_str())))
                     })
                 },
 
                 string if string.starts_with('"') => {
 
                     if !string.ends_with('"') {
-                        errors::parsing_error(token, source, "Unterminated string literal.");
+                        errors::tokenizer_error(token, source, "Unterminated string literal.");
                     }
 
                     let string = escape_string(string, token, source);
@@ -294,13 +299,13 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
                 string if string.starts_with('\'') => {
 
                     if !string.ends_with('\'') {
-                        errors::parsing_error(token, source, "Unterminated character literal.");
+                        errors::tokenizer_error(token, source, "Unterminated character literal.");
                     }
 
                     let escaped_string = escape_string(string, token, source);
 
                     if escaped_string.len() != 3 {
-                        errors::parsing_error(token, source, "Invalid character literal. A character literal can only contain one character.");
+                        errors::tokenizer_error(token, source, "Invalid character literal. A character literal can only contain one character.");
                     }
 
                     TokenValue::CharLiteral(
@@ -317,12 +322,12 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
                         TokenValue::PseudoInstruction(instruction)
 
                     } else if string == "endmacro" {
-                        if let Some(last_token) = current_line.pop() {
+                        if let Some(last_token) = current_line.pop_back() {
                             if !matches!(last_token.value, TokenValue::Mod) {
-                                errors::parsing_error(token, source, "Expected the macro modifier `%` before the 'endmacro' keyword.")
+                                errors::tokenizer_error(token, source, "Expected the macro modifier `%` before the 'endmacro' keyword.")
                             }
                         } else {
-                            errors::parsing_error(token, source, "Expected the macro modifier `%` before the 'endmacro' keyword.")
+                            errors::tokenizer_error(token, source, "Expected the macro modifier `%` before the 'endmacro' keyword.")
                         }
 
                         TokenValue::EndMacro
@@ -334,20 +339,20 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
                         } else {
                             let symbol_id = match symbol_table.declare_symbol(string, Symbol { source: token_rc.clone(), value: None, name: string }) {
                                 Ok(id) => id,
-                                Err(old_symbol) => errors::symbol_redeclaration(token, source, &old_symbol.borrow())
+                                Err(old_symbol) => errors::symbol_redeclaration(token, module_manager, &old_symbol.borrow())
                             };
     
                             TokenValue::Identifier(symbol_id)
                         }
                         
                     } else {
-                        errors::parsing_error(token, source, "Invalid token.")
+                        errors::tokenizer_error(token, source, "Invalid token.")
                     }
                 }
 
             };
 
-            current_line.push(Token {
+            current_line.push_back(Token {
                 source: token_rc,
                 priority: token_value.base_priority() as TokenPriority,
                 value: token_value,
@@ -355,7 +360,7 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
 
         }
 
-        lines.push(current_line);
+        lines.push_back(current_line);
     }
 
     lines

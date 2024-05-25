@@ -1,11 +1,13 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 
+use crate::assembler::ModuleManager;
 use crate::errors;
 use crate::symbol_table::StaticValue;
 use crate::{lang::AsmNode, symbol_table::SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNodeValue, Number, NumberLike, ENTRY_SECTION_NAME};
-use crate::tokenizer::{SourceCode, SourceToken};
+use crate::tokenizer::SourceToken;
 
 use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE, ERROR_CODE_SIZE, INSTRUCTION_SIZE, INTERRUPT_SIZE};
 
@@ -21,7 +23,7 @@ struct UnresolvedLabel<'a> {
 /// Checks the types of the operands.
 /// Resolves the still-unresolved symbols like $ or sections
 /// Some symbols must be resolved at this stage like $, sections, and labels because they depend on the generated code.
-pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCode) -> Vec<u8> {
+pub fn generate<'a>(asm: &[AsmNode], symbol_table: &'a SymbolTable<'a>, module_manager: &'a ModuleManager<'a>) -> Vec<u8> {
 
     // Allocate a minumim starting capacity. 
     // The vector will most probably be reallocated, but this pre-allocation should avoid most minor initial reallocations.
@@ -46,12 +48,12 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
     for node in asm {
 
-        match node.value {
+        match &node.value {
 
             AsmNodeValue::Label(name) => {
                 
                 if current_section.is_none() {
-                    errors::outside_section(&node.source, source, "Labels must be located inside an assembly section");
+                    errors::outside_section(&node.source, module_manager, "Labels must be located inside an assembly section");
                 }
                 
                 label_map.insert(name, VirtualAddress(bytecode.len()));
@@ -66,7 +68,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
             AsmNodeValue::Instruction(instruction) => {
 
                 if current_section.is_none() {
-                    errors::outside_section(&node.source, source, "Instructions must be located inside an assembly section");
+                    errors::outside_section(&node.source, module_manager, "Instructions must be located inside an assembly section");
                 }
 
 
@@ -75,21 +77,21 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                         bytecode.push(ByteCodes::$name as u8);
 
-                        let operand: VirtualAddress = match $addr.0 {
+                        let operand: VirtualAddress = match &$addr.0 {
 
                             AddressLike::Number(n) => {
                                 if let Some(n) = n.as_uint() {
                                     VirtualAddress(n as usize)
                                 } else {
-                                    errors::invalid_argument(&$addr.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", n).as_str())
+                                    errors::invalid_argument(&$addr.1, module_manager, format!("Invalid address `{:?}`. Must be a positive integer.", n).as_str())
                                 }
                             },
 
                             AddressLike::Symbol(id) => VirtualAddress(
-                                get_symbol_or_placeholder!(id, &$addr.1, |value, symbol| 
+                                get_symbol_or_placeholder!(*id, &$addr.1, |value, symbol| 
                                     value.as_uint(symbol_table)
                                     .unwrap_or_else(
-                                        || errors::invalid_argument(&$addr.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                        || errors::invalid_argument(&$addr.1, module_manager, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                     )
                                 ) as usize),
 
@@ -113,7 +115,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                 get_symbol_or_placeholder!(*id, &$value.1, |value, symbol| 
                                     value.as_uint(symbol_table)
                                     .unwrap_or_else(
-                                        || errors::invalid_argument(&$value.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                        || errors::invalid_argument(&$value.1, module_manager, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                     )
                                 ).to_le_bytes().to_vec(),
                                 ADDRESS_SIZE
@@ -123,7 +125,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                         };
 
                         if minimum_size > $size {
-                            errors::invalid_argument(&$value.1, source, format!("Invalid constant value `{:?}`. Must be a {} bytes integer, but got length of {} bytes.", $value.0, $size, minimum_size).as_str());
+                            errors::invalid_argument(&$value.1, module_manager, format!("Invalid constant value `{:?}`. Must be a {} bytes integer, but got length of {} bytes.", $value.0, $size, minimum_size).as_str());
                         }
 
                         bytecode.extend_from_slice(&bytes[0..$size]);
@@ -192,21 +194,21 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
 
                         one_arg_address_instruction!(LoadStaticBytes, addr);
                         
-                        let count = match count.0 {
+                        let count = match &count.0 {
                                 
                                 NumberLike::Number(n, _size) => {
                                     if let Some(n) = n.as_uint() {
                                         n as usize
                                     } else {
-                                        errors::invalid_argument(&count.1, source, format!("Invalid count `{:?}`. Must be a positive integer.", n).as_str())
+                                        errors::invalid_argument(&count.1, module_manager, format!("Invalid count `{:?}`. Must be a positive integer.", n).as_str())
                                     }
                                 },
     
                                 NumberLike::Symbol(id)
-                                 => get_symbol_or_placeholder!(id, &count.1, |value, symbol| 
+                                 => get_symbol_or_placeholder!(*id, &count.1, |value, symbol| 
                                         value.as_uint(symbol_table)
                                         .unwrap_or_else(
-                                            || errors::invalid_argument(&count.1, source, format!("Invalid count `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                            || errors::invalid_argument(&count.1, module_manager, format!("Invalid count `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                         ) as usize
                                     ),
     
@@ -235,7 +237,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                 
                                 NumberLike::Number(n, _size) => {
                                     if matches!(n, Number::Float(_)) {
-                                        errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be an integer, not a float.", n).as_str())
+                                        errors::invalid_argument(&byte.1, module_manager, format!("Invalid constant value `{:?}`. Must be an integer, not a float.", n).as_str())
                                     }
 
                                     n.as_le_bytes()
@@ -245,7 +247,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                  => get_symbol_or_placeholder!(*id, &byte.1, |value, symbol|
                                         value.as_uint(symbol_table)
                                         .unwrap_or_else(
-                                            || errors::invalid_argument(&byte.1, source, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
+                                            || errors::invalid_argument(&byte.1, module_manager, format!("Invalid address `{:?}`. Must be a positive integer.", symbol.value).as_str())
                                     ))
                                     .to_le_bytes().to_vec(),
 
@@ -253,7 +255,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                             };
 
                             if bytes_per_byte.len() != 1 {
-                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, bytes_per_byte.len()).as_str())
+                                errors::invalid_argument(&byte.1, module_manager, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, bytes_per_byte.len()).as_str())
                             }
 
                             value_bytes.push(bytes_per_byte[0]);
@@ -318,27 +320,27 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                     
                     AsmInstruction::DefineNumber { size, value } => {
                         
-                        let number_size = match size.0 {
+                        let number_size = match &size.0 {
                             NumberLike::Number(n, _size)
                             => if let Number::Uint(n) = n {
-                                n as usize
+                                *n as usize
                             } else {
-                                errors::invalid_argument(&size.1, source, "Expected an unsigned integer as number size.");
+                                errors::invalid_argument(&size.1, module_manager, "Expected an unsigned integer as number size.");
                             },
                             NumberLike::CurrentPosition => bytecode.len(),
                             NumberLike::Symbol(_)
-                                => errors::invalid_argument(&size.1, source, "Cannot use a symbol as number size in this context. Only literals are allowed."),
+                                => errors::invalid_argument(&size.1, module_manager, "Cannot use a symbol as number size in this context. Only literals are allowed."),
                         };
 
-                        let mut number_value = match value.0 {
-                            NumberLike::Number(n, s) => n.as_le_bytes()[..s as usize].to_vec(),
+                        let mut number_value = match &value.0 {
+                            NumberLike::Number(n, s) => n.as_le_bytes()[..*s as usize].to_vec(),
                             NumberLike::CurrentPosition => bytecode.len().to_le_bytes().to_vec(),
                             NumberLike::Symbol(_)
-                                => errors::invalid_argument(&value.1, source, "Expected a numeric literal.")
+                                => errors::invalid_argument(&value.1, module_manager, "Expected a numeric literal.")
                         };
 
                         if number_value.len() > number_size {
-                            errors::invalid_argument(&value.1, source, format!("Expected a number of size {}, but got a number of size {}", number_size, number_value.len()).as_str());
+                            errors::invalid_argument(&value.1, module_manager, format!("Expected a number of size {}, but got a number of size {}", number_size, number_value.len()).as_str());
                         }
 
                         // Make the number value exactly the requested size
@@ -359,7 +361,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                 
                                 NumberLike::Number(n, size) => {
                                     let num = n.as_uint().unwrap_or_else(
-                                        || errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be an unsigned integer.", n).as_str())
+                                        || errors::invalid_argument(&byte.1, module_manager, format!("Invalid constant value `{:?}`. Must be an unsigned integer.", n).as_str())
                                     );
 
                                     (*size, num as u8)
@@ -368,11 +370,11 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                                 NumberLike::CurrentPosition => (ADDRESS_SIZE as u8, bytecode.len() as u8),
 
                                 NumberLike::Symbol(_) 
-                                    => errors::invalid_argument(&byte.1, source, "Expected a byte literal")
+                                    => errors::invalid_argument(&byte.1, module_manager, "Expected a byte literal")
                             };
 
                             if num_size != 1 {
-                                errors::invalid_argument(&byte.1, source, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, num_size).as_str())
+                                errors::invalid_argument(&byte.1, module_manager, format!("Invalid constant value `{:?}`. Must be a single byte but {} bytes were provided.", byte.0, num_size).as_str())
                             }
 
                             value_bytes.push(num);
@@ -381,16 +383,21 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
                         bytecode.extend(value_bytes);
                     },
 
-                    AsmInstruction::DefineString { string } => {
+                    AsmInstruction::DefineString { static_id } => {
 
-                        let string = match symbol_table.get_static(string) {
+                        let static_data = symbol_table.get_static(*static_id);
+                        let string = match static_data.deref() {
                             StaticValue::StringLiteral(string) => string,
+                            
                         };
 
                         bytecode.extend(string.as_bytes());
                     },
 
                     AsmInstruction::Nop => push_op!(Nop),
+
+                    AsmInstruction::IncludeAsm { .. }
+                        => unreachable!("Should have been handled before")
                 }
             }
         };
@@ -401,7 +408,7 @@ pub fn generate(asm: Vec<AsmNode>, symbol_table: &SymbolTable, source: SourceCod
     for label in unresolved_labels {
         
         let value = label_map.get(label.name).unwrap_or_else(
-            || errors::undefined_symbol(&label.source, source)
+            || errors::undefined_symbol(&label.source, module_manager)
         );
 
         bytecode[label.location.0..(label.location.0 + ADDRESS_SIZE)].copy_from_slice(&value.0.to_le_bytes());

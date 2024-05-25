@@ -10,13 +10,13 @@ Project Description
 - [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
 - [ ] write assembly documentation  
-- [ ] implement a primitive assembly module system like #include in C  
 - [ ] implement in-place math in assembly for constants  
 - [ ] differentiate an optimized vm execution function and a safe execution function. the optimized execution function skips some safety checks like memory bounds  
 - [ ] add verbose mode  
 
 ### In Progress
 
+- [ ] implement a primitive assembly module system like #include in C  
 
 ### Done ✓
 

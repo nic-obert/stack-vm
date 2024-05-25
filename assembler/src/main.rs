@@ -18,10 +18,7 @@ fn main() {
     
     let args = CliParser::parse();
 
-    let assembly = files::load_assembly(&args.input_file)
-        .unwrap_or_else(|err| errors::io_error(err, format!("Could not load file \"{}\"", args.input_file.display()).as_str()));
-
-    let bytecode = assembler::assemble(&assembly, &args.input_file);
+    let bytecode = assembler::assemble(&args.input_file);
 
     if let Some(err) = files::save_byte_code(&bytecode.into_boxed_slice(), &args.input_file).err() {
         errors::io_error(err, "Could not save byte code file.");

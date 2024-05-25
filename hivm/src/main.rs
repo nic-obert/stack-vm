@@ -14,7 +14,7 @@ fn main() {
     let bytecode = fs::read(args.input_file.as_path())
         .unwrap_or_else(|err| panic!("Could not read input file \"{}\".\n{err}", args.input_file.display()));
 
-    let mut vm = exec::VM::new(args.stack_size);
+    let mut vm = exec::VM::new(args.opstack_size);
 
     let code = vm.run(&bytecode);
 
