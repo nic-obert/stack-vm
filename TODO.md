@@ -6,19 +6,21 @@ Project Description
 
 ### Todo
 
+- [ ] add instructions to get the stack pointer and program counter, but not mutate them  
 - [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
-- [ ] write assembly documentation  
 - [ ] implement in-place math in assembly for constants  
 - [ ] differentiate an optimized vm execution function and a safe execution function. the optimized execution function skips some safety checks like memory bounds  
 - [ ] add verbose mode to the vm  
 
 ### In Progress
 
+- [ ] write assembly documentation  
 - [ ] write basic asm libraries  
 
 ### Done ✓
 
+- [x] rename this project to stackvm because this has nothing high level and is exclusively a stack machine (kind of a challenge to program)  
 - [x] add call and return instructions  
 - [x] Make a rust tool to automatically generate asm library files that desbribe the architecture (interrupts, basic sizes and constants...)  
 - [x] implement a primitive assembly module system like #include in C  

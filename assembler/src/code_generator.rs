@@ -8,7 +8,7 @@ use crate::{lang::AsmNode, symbol_table::SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNodeValue, Number, NumberLike, ENTRY_SECTION_NAME};
 use crate::tokenizer::SourceToken;
 
-use hivmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE, ERROR_CODE_SIZE, INSTRUCTION_SIZE, INTERRUPT_SIZE};
+use vmlib::{ByteCodes, VirtualAddress, ADDRESS_SIZE, ERROR_CODE_SIZE, INSTRUCTION_SIZE, INTERRUPT_SIZE};
 
 
 struct UnresolvedLabel<'a> {

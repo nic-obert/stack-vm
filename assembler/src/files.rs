@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::io;
 
-use hivmlib::ByteCode;
+use vmlib::ByteCode;
 
 
 pub fn load_assembly(file_path: &Path) -> io::Result<String> {

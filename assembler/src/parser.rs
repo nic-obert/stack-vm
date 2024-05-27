@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::path::Path;
 
-use hivmlib::ByteCodes;
+use vmlib::ByteCodes;
 
 use crate::assembler;
 use crate::module_manager::ModuleManager;

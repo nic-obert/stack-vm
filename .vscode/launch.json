@@ -7,27 +7,27 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug hivm",
+            "name": "Debug vm",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=hivm",
-                    "--package=hivm"
+                    "--bin=vm",
+                    "--package=vm"
                 ],
                 "filter": {
-                    "name": "hivm",
+                    "name": "vm",
                     "kind": "bin"
                 }
             },
             "args": [
-                "${workspaceFolder}/assembler/impl/test.hibc"
+                "${workspaceFolder}/assembler/impl/test.out"
             ],
             "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'assembler'",
+            "name": "Debug assembler",
             "cargo": {
                 "args": [
                     "build",

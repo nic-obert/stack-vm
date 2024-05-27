@@ -8,7 +8,7 @@ use crate::symbol_table::{StaticID, StaticValue, Symbol, SymbolID, SymbolTable};
 use crate::lang::{Number, PseudoInstructions};
 use crate::errors;
 
-use hivmlib::ByteCodes;
+use vmlib::ByteCodes;
 
 use lazy_static::lazy_static;
 use regex::Regex;

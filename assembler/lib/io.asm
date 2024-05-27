@@ -1,8 +1,6 @@
 
 include "archlib.asm"
 
-.hi
-ds "Hi\n"
 
 @print_hi
     loadconst8 hi

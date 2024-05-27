@@ -5,7 +5,7 @@ use std::fmt;
 use static_assertions::{const_assert, const_assert_eq};
 
 
-pub const LIBRARY_ENV_VARIABLE: &'static str = "HIVM_ASM_LIB";
+pub const LIBRARY_ENV_VARIABLE: &'static str = "STACKVM_ASM_LIB";
 
 pub type Address = usize;
 pub const ADDRESS_SIZE: usize = mem::size_of::<Address>();
@@ -33,7 +33,7 @@ pub type ByteCode<'a> = &'a [u8];
 macro_rules! declare_instructions {
     ($($name:ident $asm_name:ident),+) => {
         
-/// HiVM instructions. Each instruction is represented by one byte.
+/// VM instructions. Each instruction is represented by one byte.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum ByteCodes {

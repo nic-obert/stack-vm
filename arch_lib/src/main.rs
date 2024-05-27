@@ -2,7 +2,7 @@ use std::path::Path;
 use std::env;
 use std::fs;
 
-use hivmlib::{LIBRARY_ENV_VARIABLE, ADDRESS_SIZE, INSTRUCTION_SIZE, INTERRUPT_SIZE, ERROR_CODE_SIZE, ErrorCodes, Interrupts};
+use vmlib::{LIBRARY_ENV_VARIABLE, ADDRESS_SIZE, INSTRUCTION_SIZE, INTERRUPT_SIZE, ERROR_CODE_SIZE, ErrorCodes, Interrupts};
 
 
 const ARCH_LIB_NAME: &'static str = "archlib.asm";

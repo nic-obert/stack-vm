@@ -1,5 +1,5 @@
 
-use hivmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddress, ADDRESS_SIZE};
+use vmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddress, ADDRESS_SIZE};
 
 use std::io::Read;
 use std::mem::{self, MaybeUninit};

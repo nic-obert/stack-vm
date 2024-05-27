@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::io;
 use std::env;
 
-use hivmlib::LIBRARY_ENV_VARIABLE;
+use vmlib::LIBRARY_ENV_VARIABLE;
 
 use crate::errors;
 
