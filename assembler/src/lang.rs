@@ -213,6 +213,9 @@ pub enum AsmInstruction<'a> {
     DefineBytes { bytes: Vec<NumberOperand<'a>> },
     DefineString { static_id: StaticID },
 
+    Call { addr: AddressOperand<'a> },
+    Return,
+
     Nop
 
 }
@@ -250,7 +253,8 @@ declare_pseudo_instructions! {
     DefineNumber dn,
     DefineBytes db,
     DefineString ds,
-    IncludeAsm include
+    IncludeAsm include,
+    Return ret
 
 }
 

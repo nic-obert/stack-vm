@@ -13,7 +13,7 @@ pub const INSTRUCTION_SIZE: usize = 1;
 pub const INTERRUPT_SIZE: usize = 1;
 pub const ERROR_CODE_SIZE: usize = mem::size_of::<i32>();
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct VirtualAddress(pub Address);
 
 impl VirtualAddress {
@@ -172,6 +172,8 @@ declare_instructions! {
     JumpError jerr,
     JumpNoErrorConst jnoerrconst,
     JumpNoError jnoerr,
+
+    Call call,
 
     Nop nop
 

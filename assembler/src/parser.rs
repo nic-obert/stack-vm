@@ -519,6 +519,7 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
             ByteCodes::JumpZero8 => no_args_instruction!(JumpZero8),
             ByteCodes::JumpError => no_args_instruction!(JumpError),
             ByteCodes::JumpNoError => no_args_instruction!(JumpNoError),
+            ByteCodes::Call => one_arg_address_instruction!(Call),
             ByteCodes::Nop => no_args_instruction!(Nop),
         },
 
@@ -587,6 +588,9 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
                 let include_asm = assembler::load_unit_asm(caller_directory, Path::new(path), symbol_table, module_manager);
                 nodes.extend(include_asm);
             },
+
+            PseudoInstructions::Return => no_args_instruction!(Return),
+
         },
 
         TokenValue::Bang => unreachable!("Handled before the match statement."),

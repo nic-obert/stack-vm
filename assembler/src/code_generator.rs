@@ -393,6 +393,8 @@ pub fn generate<'a>(asm: &[AsmNode], symbol_table: &'a SymbolTable<'a>, module_m
                         bytecode.extend(string.as_bytes());
                     },
 
+                    AsmInstruction::Call { addr } => one_arg_address_instruction!(Call, addr),
+                    AsmInstruction::Return => push_op!(Jump), // Return is an alias for a jump with the argument being the return address
                     AsmInstruction::Nop => push_op!(Nop),
                 }
             }

@@ -15,11 +15,12 @@ Project Description
 
 ### In Progress
 
-- [ ] Make a rust tool to automatically generate asm library files that desbribe the architecture (interrupts, basic sizes and constants...)  
 - [ ] write basic asm libraries  
 
 ### Done ✓
 
+- [x] add call and return instructions  
+- [x] Make a rust tool to automatically generate asm library files that desbribe the architecture (interrupts, basic sizes and constants...)  
 - [x] implement a primitive assembly module system like #include in C  
 - [x] use absolute paths for unit paths. to canonicalize, see how the other assembler does things. probably need some path resolver that first looks in the current file's directory, then looks in a specific library path  
 - [x] add interrupts for printing static data without needing to convert from virtual address to real  

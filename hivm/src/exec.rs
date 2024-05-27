@@ -1,5 +1,5 @@
 
-use hivmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddress};
+use hivmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddress, ADDRESS_SIZE};
 
 use std::io::Read;
 use std::mem::{self, MaybeUninit};
@@ -31,6 +31,7 @@ impl Stack {
     }
 
 
+    #[inline]
     pub unsafe fn tos(&self) -> *const u8 {
         self.tos
     }
@@ -78,7 +79,7 @@ impl Stack {
 
     pub fn push_1(&mut self, byte: u8) {
         unsafe {
-            self.tos = self.tos.byte_sub(mem::size_of::<u8>());
+            self.push_by(mem::size_of::<u8>());
             self.tos.write_unaligned(byte);
         }
     }
@@ -86,7 +87,7 @@ impl Stack {
 
     pub fn push_2(&mut self, value: u16) {
         unsafe {
-            self.tos = self.tos.byte_sub(mem::size_of::<u16>());
+            self.push_by(mem::size_of::<u16>());
             (self.tos as *mut u16).write_unaligned(value);
         }
     }
@@ -94,7 +95,7 @@ impl Stack {
 
     pub fn push_4(&mut self, value: u32) {
         unsafe {
-            self.tos = self.tos.byte_sub(mem::size_of::<u32>());
+            self.push_by(mem::size_of::<u32>());
             (self.tos as *mut u32).write_unaligned(value);
         }
     }
@@ -102,7 +103,7 @@ impl Stack {
 
     pub fn push_8(&mut self, value: u64) {
         unsafe {
-            self.tos = self.tos.byte_sub(mem::size_of::<u64>());
+            self.push_by(mem::size_of::<u64>());
             (self.tos as *mut u64).write_unaligned(value);
         }
     }
@@ -110,7 +111,7 @@ impl Stack {
 
     pub fn push_bytes(&mut self, bytes: &[u8]) {
         unsafe {
-            self.tos = self.tos.byte_sub(bytes.len());
+            self.push_by(bytes.len());
             self.tos.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len())
         }
     }
@@ -118,8 +119,26 @@ impl Stack {
 
     pub fn push_from(&mut self, src: *const u8, count: usize) {
         unsafe {
-            self.tos = self.tos.byte_sub(count);
+            self.push_by(count);
             self.tos.copy_from_nonoverlapping(src, count);
+        }
+    }
+
+
+    #[inline]
+    /// Pushes the stack by `amount` bytes (decrements the stack pointer)
+    pub fn push_by(&mut self, amount: usize) {
+        unsafe {
+            self.tos = self.tos.byte_sub(amount);
+        }
+    }
+
+
+    #[inline]
+    /// Pops the stack by `amount` bytes (increments the stack pointer)
+    pub fn pop_by(&mut self, amount: usize) {
+        unsafe {
+            self.tos = self.tos.byte_add(amount);
         }
     }
 
@@ -127,7 +146,7 @@ impl Stack {
     pub fn pop_1(&mut self) -> u8 {
         unsafe {
             let value = self.tos.read_unaligned();
-            self.tos = self.tos.byte_add(mem::size_of::<u8>());
+            self.pop_by(mem::size_of::<u8>());
             value
         }
     }
@@ -136,7 +155,7 @@ impl Stack {
     pub fn pop_2(&mut self) -> u16 {
         unsafe {
             let value = (self.tos as *const u16).read_unaligned();
-            self.tos = self.tos.byte_add(mem::size_of::<u16>());
+            self.pop_by(mem::size_of::<u16>());
             value
         }
     }
@@ -145,7 +164,7 @@ impl Stack {
     pub fn pop_4(&mut self) -> u32 {
         unsafe {
             let value = (self.tos as *const u32).read_unaligned();
-            self.tos = self.tos.byte_add(mem::size_of::<u32>());
+            self.pop_by(mem::size_of::<u32>());
             value
         }
     }
@@ -154,7 +173,7 @@ impl Stack {
     pub fn pop_8(&mut self) -> u64 {
         unsafe {
             let value = (self.tos as *const u64).read_unaligned();
-            self.tos = self.tos.byte_add(mem::size_of::<u64>());
+            self.pop_by(mem::size_of::<u64>());
             value
         }
     }
@@ -163,7 +182,7 @@ impl Stack {
     pub fn pop_bytes(&mut self, count: usize) -> &[u8] {
         unsafe {
             let bytes = std::slice::from_raw_parts::<u8>(self.tos, count);
-            self.tos = self.tos.byte_add(count);
+            self.pop_by(count);
             bytes
         }
     }
@@ -280,6 +299,12 @@ impl<'a> Program<'a> {
 
     pub fn virtual_to_real(&self, vaddress: VirtualAddress) -> Address {
         vaddress.0 + self.code.as_ptr() as Address
+    }
+
+
+    #[inline]
+    pub fn program_counter(&self) -> VirtualAddress {
+        self.program_counter
     }
 
 }
@@ -875,6 +900,13 @@ impl VM {
                     if matches!(self.error_code, ErrorCodes::NoError) {
                         program.jump_to(target);
                     }
+                },
+
+                ByteCodes::Call => {
+                    let target = VirtualAddress(program.fetch_8() as usize);
+                    // Push the return address (the instruction next to the current call instruction)
+                    self.opstack.push_8(program.program_counter().0 as u64);
+                    program.jump_to(target);
                 },
 
                 ByteCodes::Nop => { /* Do nothing */ },
