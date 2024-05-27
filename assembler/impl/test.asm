@@ -1,10 +1,13 @@
 
-include "to_import.asm"
+include "archlib.asm"
+
+.msg
+ds "Hello World!\n"
 
 .text
 
     loadconst8 msg
-    loadconst8 3
-    intrconst 8
+    loadconst8 13
+    intrconst !PRINT_STATIC_STRING_INTR
     
 

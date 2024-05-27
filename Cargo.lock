@@ -60,6 +60,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arch_lib"
+version = "0.1.0"
+dependencies = [
+ "hivmlib",
+]
+
+[[package]]
 name = "assembler"
 version = "0.1.0"
 dependencies = [

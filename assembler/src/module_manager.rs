@@ -4,10 +4,9 @@ use std::path::{Path, PathBuf};
 use std::io;
 use std::env;
 
+use hivmlib::LIBRARY_ENV_VARIABLE;
+
 use crate::errors;
-
-
-const LIBRARY_ENV_VARIABLE: &'static str = "HIVM_ASM_LIB";
 
 
 /// Struct must not implement Clone or Copy

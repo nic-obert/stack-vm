@@ -1,8 +1,11 @@
+use std::fmt::Display;
 use std::mem;
 use std::fmt;
 
 use static_assertions::{const_assert, const_assert_eq};
 
+
+pub const LIBRARY_ENV_VARIABLE: &'static str = "HIVM_ASM_LIB";
 
 pub type Address = usize;
 pub const ADDRESS_SIZE: usize = mem::size_of::<Address>();
@@ -177,6 +180,7 @@ declare_instructions! {
 const_assert!(mem::size_of::<ByteCodes>() == INSTRUCTION_SIZE);
 
 
+#[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum Interrupts {
     Print1 = 0,
@@ -198,6 +202,12 @@ impl From<u8> for Interrupts {
         unsafe {
             mem::transmute(byte)
         }
+    }
+}
+
+impl Display for Interrupts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self as u8)
     }
 }
 

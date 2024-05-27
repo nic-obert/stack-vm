@@ -6,16 +6,17 @@ Project Description
 
 ### Todo
 
-- [ ] Make a rust tool to automatically generate asm library files that desbribe the architecture (interrupts, basic sizes and constants...)  
 - [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
 - [ ] write assembly documentation  
 - [ ] implement in-place math in assembly for constants  
 - [ ] differentiate an optimized vm execution function and a safe execution function. the optimized execution function skips some safety checks like memory bounds  
-- [ ] add verbose mode  
+- [ ] add verbose mode to the vm  
 
 ### In Progress
 
+- [ ] Make a rust tool to automatically generate asm library files that desbribe the architecture (interrupts, basic sizes and constants...)  
+- [ ] write basic asm libraries  
 
 ### Done ✓
 
