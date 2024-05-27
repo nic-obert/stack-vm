@@ -12,5 +12,7 @@ find hivm -type f -name "*.rs" | xargs wc -l | sort -nr
 echo $'\nHiVMlib:'
 find hivmlib -type f -name "*.rs" | xargs wc -l | sort -nr
 
-echo ""
+echo $'\n\nAssembly:'
+find . -type f -name "*.asm" | xargs wc -l | sort -nr
 
+echo 
