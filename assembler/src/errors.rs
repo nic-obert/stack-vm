@@ -3,7 +3,9 @@ use std::cmp::min;
 
 use colored::Colorize;
 
-use crate::{assembler::ModuleManager, symbol_table::Symbol, tokenizer::{SourceCode, SourceToken}};
+use crate::tokenizer::{SourceCode, SourceToken};
+use crate::symbol_table::Symbol;
+use crate::module_manager::ModuleManager;
 
 
 pub fn print_source_context(source: SourceCode, line_index: usize, char_pointer: usize) {

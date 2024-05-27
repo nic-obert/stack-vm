@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::rc::Rc;
 
-use crate::assembler::ModuleManager;
+use crate::module_manager::ModuleManager;
 use crate::errors;
 use crate::symbol_table::StaticValue;
 use crate::{lang::AsmNode, symbol_table::SymbolTable};
@@ -135,7 +134,7 @@ pub fn generate<'a>(asm: &[AsmNode], symbol_table: &'a SymbolTable<'a>, module_m
                 macro_rules! get_symbol_or_placeholder {
                     ($symbol_id:expr, $arg_source:expr, |$value:ident, $symbol:ident| $operations:stmt) => {{
 
-                        let $symbol = symbol_table.get_symbol($symbol_id).borrow();
+                        let $symbol = symbol_table.get_symbol($symbol_id);
 
                         if let Some($value) = $symbol.value.as_ref() {
                             $operations
@@ -386,7 +385,7 @@ pub fn generate<'a>(asm: &[AsmNode], symbol_table: &'a SymbolTable<'a>, module_m
                     AsmInstruction::DefineString { static_id } => {
 
                         let static_data = symbol_table.get_static(*static_id);
-                        let string = match static_data.deref() {
+                        let string = match static_data {
                             StaticValue::StringLiteral(string) => string,
                             
                         };
@@ -395,9 +394,6 @@ pub fn generate<'a>(asm: &[AsmNode], symbol_table: &'a SymbolTable<'a>, module_m
                     },
 
                     AsmInstruction::Nop => push_op!(Nop),
-
-                    AsmInstruction::IncludeAsm { .. }
-                        => unreachable!("Should have been handled before")
                 }
             }
         };

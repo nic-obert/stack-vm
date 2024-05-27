@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::path::Path;
 use std::borrow::Cow;
 
-use crate::assembler::ModuleManager;
+use crate::module_manager::ModuleManager;
 use crate::symbol_table::{StaticID, StaticValue, Symbol, SymbolID, SymbolTable};
 use crate::lang::{Number, PseudoInstructions};
 use crate::errors;

@@ -1,13 +1,13 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::path::Path;
 
 use hivmlib::ByteCodes;
 
-use crate::assembler::{self, ModuleManager};
+use crate::assembler;
+use crate::module_manager::ModuleManager;
 use crate::tokenizer::{Token, TokenLines, TokenList, TokenValue};
-use crate::symbol_table::{StaticValue, SymbolID, SymbolTable};
+use crate::symbol_table::{SymbolID, SymbolTable};
 use crate::lang::{AddressLike, AsmInstruction, AsmNode, AsmNodeValue, AsmOperand, AsmValue, Number, NumberLike, PseudoInstructions};
 use crate::errors;
 
@@ -28,7 +28,7 @@ use crate::errors;
 // }
 
 
-fn parse_operands<'a>(mut tokens: TokenList<'a>, symbol_table: &SymbolTable, module_manager: &'a ModuleManager<'a>) -> Box<[AsmOperand<'a>]> {
+fn parse_operands<'a>(mut tokens: TokenList<'a>, symbol_table: &'a SymbolTable<'a>, module_manager: &'a ModuleManager<'a>) -> Box<[AsmOperand<'a>]> {
     
     // TODO: implement in-line constant math and eventual in-line operators.
 
@@ -275,7 +275,7 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
 
             // Reduce the scope of `symbol` to comply with the dynamic borrow checker
             {
-                let symbol = symbol_table.get_symbol(symbol_id).borrow();
+                let symbol = symbol_table.get_symbol(symbol_id);
 
                 // Disallow defining a label more than once.
                 if symbol.value.is_some() {
@@ -382,7 +382,7 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
             };
 
             { // Scope for symbol borrow (cannot borrow again later while `symbol` is still borrowed)
-                let symbol = symbol_table.get_symbol(symbol_id).borrow();
+                let symbol = symbol_table.get_symbol(symbol_id);
 
                 if symbol.value.is_some() {
                     errors::symbol_redeclaration(&op.source, module_manager, &symbol);
@@ -579,13 +579,13 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
                     _ => errors::parsing_error(&op.source, module_manager, "Expected a string literal.")
                 };
 
-                // let static_value = symbol_table.get_static(static_id);
-                // let path = match static_value.deref() {
-                //     StaticValue::StringLiteral(path) => Path::new(path.as_ref()),
-                // };
+                let static_value = symbol_table.get_static(static_id);
+                let path = static_value.as_string();
 
-                // let include_asm = assembler::load_unit_asm(path, symbol_table, module_manager);
-                // nodes.extend(include_asm);
+                let caller_directory = main_operator.source.unit_path.parent();
+
+                let include_asm = assembler::load_unit_asm(caller_directory, Path::new(path), symbol_table, module_manager);
+                nodes.extend(include_asm);
             },
         },
 

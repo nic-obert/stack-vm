@@ -1,6 +1,5 @@
 
-.msg
-ds "Hi\n"
+include "to_import.asm"
 
 .text
 

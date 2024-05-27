@@ -16,10 +16,11 @@ Project Description
 
 ### In Progress
 
-- [ ] implement a primitive assembly module system like #include in C  
 
 ### Done ✓
 
+- [x] implement a primitive assembly module system like #include in C  
+- [x] use absolute paths for unit paths. to canonicalize, see how the other assembler does things. probably need some path resolver that first looks in the current file's directory, then looks in a specific library path  
 - [x] add interrupts for printing static data without needing to convert from virtual address to real  
 - [x] shorten virtual address instruction names  
 - [x] change io interrupts to print from pointer instead of from the stack  

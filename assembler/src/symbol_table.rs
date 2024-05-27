@@ -27,6 +27,16 @@ pub enum StaticValue<'a> {
     StringLiteral(Cow<'a, str>)
 }
 
+impl StaticValue<'_> {
+
+    pub fn as_string<'a>(&'a self) -> &'a str {
+        match self {
+            Self::StringLiteral(s) => s,
+        }
+    }
+
+}
+
 
 pub struct SymbolTable<'a> {
 
@@ -57,9 +67,10 @@ impl<'a> SymbolTable<'a> {
     }
 
     
-    pub fn get_static(&'a self, id: StaticID) -> Ref<'a, StaticValue<'a>> {
+    pub fn get_static(&self, id: StaticID) -> &'a StaticValue<'a> {
         let statics = unsafe { &*self.statics.get() };
-        Ref::map(statics[id.0].borrow(), |val| val)
+        // Leak is safe because statics never get mutated
+        Ref::leak(statics[id.0].borrow())
     }
 
 
@@ -100,9 +111,9 @@ impl<'a> SymbolTable<'a> {
     /// Returns the symbol with the given id.
     /// Assumes the symbol exists in the symbol table and is reachable.
     /// Since the symbol id was issued by the symbol table itself, there shouldn't be unmatched symbol ids.
-    pub fn get_symbol(&self, id: SymbolID) -> &RefCell<Symbol<'a>> {
+    pub fn get_symbol(&self, id: SymbolID) -> Ref<'a, Symbol<'a>> {
         let symbols = unsafe { &*self.symbols.get() };
-        &symbols[id.0]
+        Ref::map(symbols[id.0].borrow(), |symbol| symbol)
     }
 
 }

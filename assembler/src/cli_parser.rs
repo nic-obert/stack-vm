@@ -19,5 +19,9 @@ pub struct CliParser {
     #[clap(short='v', long)]
     pub verbose: bool,
 
+    /// List of paths to search for included libraries
+    #[clap(short='L', value_delimiter=',')]
+    pub include_paths: Vec<PathBuf>,
+
 }
 

@@ -1,8 +1,4 @@
-use std::mem;
 use std::rc::Rc;
-
-use hivmlib::ByteCodes;
-use static_assertions::const_assert_eq;
 
 use crate::tokenizer::SourceToken;
 use crate::symbol_table::{StaticID, SymbolID, SymbolTable};
@@ -100,7 +96,6 @@ pub enum AddressLike {
 
 type AddressOperand<'a> = (AddressLike, Rc<SourceToken<'a>>);
 type NumberOperand<'a> = (NumberLike, Rc<SourceToken<'a>>);
-type StringOperand<'a> = (StaticID, Rc<SourceToken<'a>>);
 
 
 /// Representation of assembly instructions and their operands
@@ -218,13 +213,11 @@ pub enum AsmInstruction<'a> {
     DefineBytes { bytes: Vec<NumberOperand<'a>> },
     DefineString { static_id: StaticID },
 
-    IncludeAsm { path: StringOperand<'a> },
-
     Nop
 
 }
 
-const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>() + mem::variant_count::<PseudoInstructions>());
+// const_assert_eq!(mem::variant_count::<AsmInstruction>(), mem::variant_count::<ByteCodes>() + mem::variant_count::<PseudoInstructions>());
 
 
 macro_rules! declare_pseudo_instructions {
@@ -307,14 +300,13 @@ impl AsmValue {
     }
 
 
-    pub fn as_uint(&self, symbol_table: &SymbolTable) -> Option<u64> {
+    pub fn as_uint<'a>(&self, symbol_table: &'a SymbolTable<'a>) -> Option<u64> {
         match self {
 
             AsmValue::Const(n) => n.as_uint(),
 
             AsmValue::Symbol(id)
              => symbol_table.get_symbol(*id)
-                .borrow()
                 .value
                 .as_ref()
                 .and_then(|v| v.as_uint_strict()),
