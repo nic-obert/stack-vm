@@ -1,4 +1,4 @@
-# HiVM
+# Stack VM
 
 Project Description
 
@@ -6,7 +6,6 @@ Project Description
 
 ### Todo
 
-- [ ] add instructions to get the stack pointer and program counter, but not mutate them  
 - [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
 - [ ] implement in-place math in assembly for constants  
@@ -20,6 +19,7 @@ Project Description
 
 ### Done ✓
 
+- [x] add instructions to get the stack pointer and program counter, but not mutate them  
 - [x] rename this project to stackvm because this has nothing high level and is exclusively a stack machine (kind of a challenge to program)  
 - [x] add call and return instructions  
 - [x] Make a rust tool to automatically generate asm library files that desbribe the architecture (interrupts, basic sizes and constants...)  

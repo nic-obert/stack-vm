@@ -114,6 +114,11 @@ declare_instructions! {
     Load4 load4,
     Load8 load8,
     LoadBytes loadn,
+
+    LoadStackPointer loadsp,
+    LoadStackBottom loadsb,
+    LoadStackSize loadss,
+    LoadProgramCounter loadpc,
     
     VirtualConstToReal vconsttr,
     VirtualToReal vtr,

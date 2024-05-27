@@ -1,9 +1,11 @@
 
-use vmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddress, ADDRESS_SIZE};
+use vmlib::{Address, ByteCode, ByteCodes, ErrorCodes, Interrupts, VirtualAddress, INSTRUCTION_SIZE};
 
 use std::io::Read;
 use std::mem::{self, MaybeUninit};
-use std::{alloc, io, slice};
+use std::slice;
+use std::io;
+use std::alloc;
 use std::ptr;
 
 
@@ -220,14 +222,14 @@ impl<'a> Program<'a> {
 
     pub fn fetch_instruction(&mut self) -> Option<ByteCodes> {
         let instruction = ByteCodes::from(*self.code.get(self.program_counter.0)?);
-        self.program_counter.0 += 1;
+        self.program_counter.0 += INSTRUCTION_SIZE;
         Some(instruction)
     }
 
 
     pub fn fetch_1(&mut self) -> u8 {
         let byte = self.code[self.program_counter.0];
-        self.program_counter.0 += 1;
+        self.program_counter.0 += mem::size_of::<u8>();
         byte
     }
 
@@ -236,7 +238,7 @@ impl<'a> Program<'a> {
         let value = unsafe {
             ((self.code.as_ptr().add(self.program_counter.0)) as *const u16).read_unaligned()
         };
-        self.program_counter.0 += 2;
+        self.program_counter.0 += mem::size_of::<u16>();
         value
     }
 
@@ -245,7 +247,7 @@ impl<'a> Program<'a> {
         let value = unsafe {
             (self.code.as_ptr().add(self.program_counter.0) as *const u32).read_unaligned()
         };
-        self.program_counter.0 += 4;
+        self.program_counter.0 += mem::size_of::<u32>();
         value
     }
 
@@ -254,7 +256,7 @@ impl<'a> Program<'a> {
         let value = unsafe {
             (self.code.as_ptr().add(self.program_counter.0) as *const u64).read_unaligned()
         };
-        self.program_counter.0 += 8;
+        self.program_counter.0 += mem::size_of::<u64>();
         value
     }
 
@@ -603,6 +605,19 @@ impl VM {
                 ByteCodes::LoadConstBytes => {
                     let count = program.fetch_8() as usize;
                     self.opstack.push_bytes(program.fetch_bytes(count));
+                },
+
+                ByteCodes::LoadProgramCounter => {
+                    self.opstack.push_8(program.program_counter().0 as u64);
+                },
+                ByteCodes::LoadStackPointer => {
+                    self.opstack.push_8(unsafe { self.opstack.tos() } as u64);
+                },
+                ByteCodes::LoadStackSize => {
+                    self.opstack.push_8(self.opstack._stack.len() as u64);
+                },
+                ByteCodes::LoadStackBottom => {
+                    self.opstack.push_8(self.opstack._stack.as_ptr() as u64);
                 },
 
                 ByteCodes::Store1 => {

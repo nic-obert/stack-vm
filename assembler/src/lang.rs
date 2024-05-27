@@ -152,6 +152,11 @@ pub enum AsmInstruction<'a> {
     Load8,
     LoadBytes,
 
+    LoadStackPointer,
+    LoadStackBottom,
+    LoadStackSize,
+    LoadProgramCounter,
+
     VirtualConstToReal { addr: AddressOperand<'a> },
     VirtualToReal,
 
