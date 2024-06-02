@@ -110,21 +110,28 @@ fn parse_operands<'a>(mut tokens: TokenList<'a>, symbol_table: &'a SymbolTable<'
 }
 
 
-struct MacroDef<'a> {
+pub struct MacroDef<'a> {
     args: Box<[SymbolID]>,
     body: Box<[(Token<'a>, Box<[AsmOperand<'a>]>)]>
 }
 
 
-type MacroMap<'a> = HashMap<SymbolID, MacroDef<'a>>;
+pub type MacroMap<'a> = HashMap<SymbolID, MacroDef<'a>>;
 
 
 fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nodes: &mut Vec<AsmNode<'a>>, macros: &mut MacroMap<'a>, token_lines: &mut TokenLines<'a>, module_manager: &'a ModuleManager<'a>, symbol_table: &'a SymbolTable<'a>) {
 
     macro_rules! check_arg_count {
+
         ($required:expr) => {
             if operands.len() != $required {
                 errors::parsing_error(&main_operator.source, module_manager, format!("Operator expects exactly {} arguments, but {} were given.", $required, operands.len()).as_str())
+            }
+        };
+
+        ($required:expr, $operands:ident) => {
+            if $operands.len() != $required {
+                errors::parsing_error(&main_operator.source, module_manager, format!("Operator expects exactly {} arguments, but {} were given.", $required, $operands.len()).as_str())
             }
         }
     }
@@ -147,7 +154,7 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
         // Skip the macro name
         let operands = &operands[1..];
 
-        check_arg_count!(macro_def.args.len());
+        check_arg_count!(macro_def.args.len(), operands);
 
         let mut macro_args = HashMap::new();
 
@@ -589,7 +596,7 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
 
                 let caller_directory = main_operator.source.unit_path.parent();
 
-                let include_asm = assembler::load_unit_asm(caller_directory, Path::new(path), symbol_table, module_manager);
+                let include_asm = assembler::load_unit_asm(caller_directory, Path::new(path), symbol_table, module_manager, macros);
                 nodes.extend(include_asm);
             },
 
@@ -616,13 +623,11 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
 }
 
 
-pub fn parse<'a>(mut token_lines: TokenLines<'a>, symbol_table: &'a SymbolTable<'a>, module_manager: &'a ModuleManager<'a>) -> Vec<AsmNode<'a>> {
+pub fn parse<'a>(mut token_lines: TokenLines<'a>, symbol_table: &'a SymbolTable<'a>, module_manager: &'a ModuleManager<'a>, macros: &mut MacroMap<'a>) -> Vec<AsmNode<'a>> {
 
     // A good estimate for the number of nodes is the number of assembly lines. This is because an assembly line 
     // usually translates to a single instruction. This should avoid reallocations in most cases.
     let mut nodes = Vec::with_capacity(token_lines.len());
-
-    let mut macros = MacroMap::new();
 
     while let Some(mut line) = token_lines.pop_front() {
 
@@ -632,7 +637,7 @@ pub fn parse<'a>(mut token_lines: TokenLines<'a>, symbol_table: &'a SymbolTable<
 
         let operands = parse_operands(line, symbol_table, module_manager);
 
-        parse_line(main_operator, operands, &mut nodes, &mut macros, &mut token_lines, module_manager, symbol_table);
+        parse_line(main_operator, operands, &mut nodes, macros, &mut token_lines, module_manager, symbol_table);
     }
 
     nodes.shrink_to_fit();

@@ -6,6 +6,7 @@ Project Description
 
 ### Todo
 
+- [ ] write assembly documentation  
 - [ ] improve the macro system, make it more powerful  
 - [ ] write a disassembler  
 - [ ] implement in-place math in assembly for constants  
@@ -14,8 +15,8 @@ Project Description
 
 ### In Progress
 
-- [ ] write assembly documentation  
 - [ ] write basic asm libraries  
+- [ ] devise an algorithm to easily do stuff on a stack machine using macros  
 
 ### Done ✓
 

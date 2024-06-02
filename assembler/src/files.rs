@@ -14,7 +14,7 @@ pub fn load_assembly(file_path: &Path) -> io::Result<String> {
 
 fn generate_output_name(input_name: &Path) -> String {
     
-    input_name.with_extension("hibc").to_str().unwrap().to_string()
+    input_name.with_extension("out").to_str().unwrap().to_string()
 }
 
 
