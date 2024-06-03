@@ -482,6 +482,8 @@ fn parse_line<'a>(main_operator: Token<'a>, operands: Box<[AsmOperand<'a>]>, nod
             ByteCodes::LoadStackPointer => no_args_instruction!(LoadStackPointer),
             ByteCodes::LoadStackBottom => no_args_instruction!(LoadStackBottom),
             ByteCodes::LoadStackSize => no_args_instruction!(LoadStackSize),
+            ByteCodes::PopConst => one_arg_numeric_instruction!(PopConst),
+            ByteCodes::PopBytes => no_args_instruction!(PopBytes),
             ByteCodes::VirtualConstToReal => one_arg_address_instruction!(VirtualConstToReal),
             ByteCodes::VirtualToReal => no_args_instruction!(VirtualToReal),
             ByteCodes::Store1 => no_args_instruction!(Store1),

@@ -46,28 +46,28 @@ impl Stack {
 
     pub fn peek_1(&self) -> u8 {
         unsafe {
-            self.tos.byte_sub(mem::size_of::<u8>()).read_unaligned()
+            self.tos.read_unaligned()
         }
     }
 
 
     pub fn peek_2(&self) -> u16 {
         unsafe {
-            (self.tos.byte_sub(mem::size_of::<u16>()) as *const u16).read_unaligned()
+            (self.tos as *const u16).read_unaligned()
         }
     }
 
 
     pub fn peek_4(&self) -> u32 {
         unsafe {
-            (self.tos.byte_sub(mem::size_of::<u32>()) as *const u32).read_unaligned()
+            (self.tos as *const u32).read_unaligned()
         }
     }
 
 
     pub fn peek_8(&self) -> u64 {
         unsafe {
-            (self.tos.byte_sub(mem::size_of::<u64>()) as *const u64).read_unaligned()
+            (self.tos as *const u64).read_unaligned()
         }
     }
 
@@ -368,23 +368,23 @@ impl VM {
                     self.opstack.push_8(a.wrapping_add(b) as u64);
                 },
                 ByteCodes::SubInt1 => {
-                    let a = self.opstack.pop_1() as i8;
                     let b = self.opstack.pop_1() as i8;
+                    let a = self.opstack.pop_1() as i8;
                     self.opstack.push_1(a.wrapping_sub(b) as u8);
                 },
                 ByteCodes::SubInt2 => {
-                    let a = self.opstack.pop_2() as i16;
                     let b = self.opstack.pop_2() as i16;
+                    let a = self.opstack.pop_2() as i16;
                     self.opstack.push_2(a.wrapping_sub(b) as u16);
                 },
                 ByteCodes::SubInt4 => {
-                    let a = self.opstack.pop_4() as i32;
                     let b = self.opstack.pop_4() as i32;
+                    let a = self.opstack.pop_4() as i32;
                     self.opstack.push_4(a.wrapping_sub(b) as u32);
                 },
                 ByteCodes::SubInt8 => {
-                    let a = self.opstack.pop_8() as i64;
                     let b = self.opstack.pop_8() as i64;
+                    let a = self.opstack.pop_8() as i64;
                     self.opstack.push_8(a.wrapping_sub(b) as u64);
                 },
                 ByteCodes::MulInt1 => {
@@ -408,43 +408,43 @@ impl VM {
                     self.opstack.push_8(a.wrapping_mul(b) as u64);
                 },
                 ByteCodes::DivInt1 => {
-                    let a = self.opstack.pop_1() as i8;
                     let b = self.opstack.pop_1() as i8;
+                    let a = self.opstack.pop_1() as i8;
                     self.opstack.push_1(a.wrapping_div(b) as u8);
                 },
                 ByteCodes::DivInt2 => {
-                    let a = self.opstack.pop_2() as i16;
                     let b = self.opstack.pop_2() as i16;
+                    let a = self.opstack.pop_2() as i16;
                     self.opstack.push_2(a.wrapping_div(b) as u16);
                 },
                 ByteCodes::DivInt4 => {
-                    let a = self.opstack.pop_4() as i32;
                     let b = self.opstack.pop_4() as i32;
+                    let a = self.opstack.pop_4() as i32;
                     self.opstack.push_4(a.wrapping_div(b) as u32);
                 },
                 ByteCodes::DivInt8 => {
-                    let a = self.opstack.pop_8() as i64;
                     let b = self.opstack.pop_8() as i64;
+                    let a = self.opstack.pop_8() as i64;
                     self.opstack.push_8(a.wrapping_div(b) as u64);
                 },
                 ByteCodes::ModInt1 => {
-                    let a = self.opstack.pop_1() as i8;
                     let b = self.opstack.pop_1() as i8;
+                    let a = self.opstack.pop_1() as i8;
                     self.opstack.push_1(a.wrapping_rem(b) as u8);
                 },
                 ByteCodes::ModInt2 => {
-                    let a = self.opstack.pop_2() as i16;
                     let b = self.opstack.pop_2() as i16;
+                    let a = self.opstack.pop_2() as i16;
                     self.opstack.push_2(a.wrapping_rem(b) as u16);
                 },
                 ByteCodes::ModInt4 => {
-                    let a = self.opstack.pop_4() as i32;
                     let b = self.opstack.pop_4() as i32;
+                    let a = self.opstack.pop_4() as i32;
                     self.opstack.push_4(a.wrapping_rem(b) as u32);
                 },
                 ByteCodes::ModInt8 => {
-                    let a = self.opstack.pop_8() as i64;
                     let b = self.opstack.pop_8() as i64;
+                    let a = self.opstack.pop_8() as i64;
                     self.opstack.push_8(a.wrapping_rem(b) as u64);
                 },
 
@@ -459,13 +459,13 @@ impl VM {
                     self.opstack.push_8((a + b) as u64);
                 },
                 ByteCodes::SubFloat4 => {
-                    let a = self.opstack.pop_4() as f32;
                     let b = self.opstack.pop_4() as f32;
+                    let a = self.opstack.pop_4() as f32;
                     self.opstack.push_4((a - b) as u32);
                 },
                 ByteCodes::SubFloat8 => {
-                    let a = self.opstack.pop_8() as f64;
                     let b = self.opstack.pop_8() as f64;
+                    let a = self.opstack.pop_8() as f64;
                     self.opstack.push_8((a - b) as u64);
                 },
                 ByteCodes::MulFloat4 => {
@@ -479,23 +479,23 @@ impl VM {
                     self.opstack.push_8((a * b) as u64);
                 },
                 ByteCodes::DivFloat4 => {
-                    let a = self.opstack.pop_4() as f32;
                     let b = self.opstack.pop_4() as f32;
+                    let a = self.opstack.pop_4() as f32;
                     self.opstack.push_4((a / b) as u32);
                 },
                 ByteCodes::DivFloat8 => {
-                    let a = self.opstack.pop_8() as f64;
                     let b = self.opstack.pop_8() as f64;
+                    let a = self.opstack.pop_8() as f64;
                     self.opstack.push_8((a / b) as u64);
                 },
                 ByteCodes::ModFloat4 => {
-                    let a = self.opstack.pop_4() as f32;
                     let b = self.opstack.pop_4() as f32;
+                    let a = self.opstack.pop_4() as f32;
                     self.opstack.push_4((a % b) as u32);
                 },
                 ByteCodes::ModFloat8 => {
-                    let a = self.opstack.pop_8() as f64;
                     let b = self.opstack.pop_8() as f64;
+                    let a = self.opstack.pop_8() as f64;
                     self.opstack.push_8((a % b) as u64);
                 },
 
@@ -566,6 +566,15 @@ impl VM {
                     let vsrc = VirtualAddress(program.fetch_8() as Address);
                     let count = program.fetch_8() as usize;
                     self.opstack.push_bytes(program.get_static_bytes(vsrc, count));
+                },
+
+                ByteCodes::PopConst => {
+                    let count = program.fetch_8() as usize;
+                    self.opstack.pop_by(count);
+                },
+                ByteCodes::PopBytes => {
+                    let count = self.opstack.pop_8() as usize;
+                    self.opstack.pop_by(count);
                 },
 
                 ByteCodes::Load1 => {

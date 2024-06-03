@@ -1,23 +1,26 @@
 
 include "reglib.asm"
 include "archlib.asm"
+include "cstring.asm"
+include "io.asm"
+
+
+.str
+ds "hello\0"
 
 
 .text
 
-    !init_reglib
+    ;!init_reglib
 
-    loadc8 104
-    !r2
-    store8
+    vctr str
+    
+    call cstrlen
 
-    !r2
-    load1
-    intrconst !PRINT_CHAR_INTR
+    !ldr1
+    !println8
 
-    loadc1 10
-    intrconst !PRINT_CHAR_INTR
-
+    loadc4 0
     exit
     
 

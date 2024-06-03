@@ -304,8 +304,8 @@ pub fn tokenize<'a>(source: SourceCode<'a>, unit_path: &'a Path, symbol_table: &
 
                     let escaped_string = escape_string(string, token, source);
 
-                    if escaped_string.len() != 3 {
-                        errors::tokenizer_error(token, source, "Invalid character literal. A character literal can only contain one character.");
+                    if escaped_string.len() != 1 {
+                        errors::tokenizer_error(token, source, format!("Invalid character literal. A character literal can only contain one character, but {} were found.", escaped_string.len()).as_str());
                     }
 
                     TokenValue::CharLiteral(

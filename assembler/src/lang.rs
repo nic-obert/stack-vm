@@ -157,6 +157,9 @@ pub enum AsmInstruction<'a> {
     LoadStackSize,
     LoadProgramCounter,
 
+    PopConst { value: NumberOperand<'a> },
+    PopBytes,
+
     VirtualConstToReal { addr: AddressOperand<'a> },
     VirtualToReal,
 

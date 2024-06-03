@@ -16,10 +16,10 @@ Project Description
 ### In Progress
 
 - [ ] write basic asm libraries  
-- [ ] devise an algorithm to easily do stuff on a stack machine using macros  
 
 ### Done ✓
 
+- [x] devise an algorithm to easily do stuff on a stack machine using macros  
 - [x] add instructions to get the stack pointer and program counter, but not mutate them  
 - [x] rename this project to stackvm because this has nothing high level and is exclusively a stack machine (kind of a challenge to program)  
 - [x] add call and return instructions  

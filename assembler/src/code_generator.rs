@@ -272,6 +272,8 @@ pub fn generate<'a>(asm: &[AsmNode], symbol_table: &'a SymbolTable<'a>, module_m
                     AsmInstruction::LoadProgramCounter => push_op!(LoadProgramCounter),
                     AsmInstruction::LoadStackBottom => push_op!(LoadStackBottom),
                     AsmInstruction::LoadStackSize => push_op!(LoadStackSize),
+                    AsmInstruction::PopBytes => push_op!(PopBytes),
+                    AsmInstruction::PopConst { value } => one_arg_number_instruction!(PopConst, value, ADDRESS_SIZE),
                     AsmInstruction::VirtualConstToReal { addr } => one_arg_address_instruction!(VirtualConstToReal, addr),
                     AsmInstruction::VirtualToReal => push_op!(VirtualToReal),
                     AsmInstruction::Store1 => push_op!(Store1),
